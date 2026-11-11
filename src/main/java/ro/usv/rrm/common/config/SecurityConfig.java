@@ -1,7 +1,7 @@
 package ro.usv.rrm.common.config;
 
 import java.util.List;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
@@ -22,13 +22,10 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  * Autentificarea JWT, 2FA și RBAC se adaugă în tichetele TO-1, TO-2 și TO-3.
  */
 @Configuration
+@RequiredArgsConstructor
 public class SecurityConfig {
 
-  private final List<String> allowedOrigins;
-
-  public SecurityConfig(@Value("${rrm.cors.allowed-origins}") List<String> allowedOrigins) {
-    this.allowedOrigins = allowedOrigins;
-  }
+  private final RrmProperties properties;
 
   @Bean
   SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -56,7 +53,7 @@ public class SecurityConfig {
   @Bean
   CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration config = new CorsConfiguration();
-    config.setAllowedOrigins(allowedOrigins);
+    config.setAllowedOrigins(properties.cors().allowedOrigins());
     config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
     config.setMaxAge(3600L);

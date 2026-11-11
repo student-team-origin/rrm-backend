@@ -2,8 +2,7 @@ package ro.usv.rrm.common.error;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,24 +16,13 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /** Transformă excepțiile în răspunsuri {@link ApiError}, cu codurile HTTP din docs/openapi.yaml. */
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-  private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
-
-  @ExceptionHandler(NotFoundException.class)
-  ResponseEntity<ApiError> handleNotFound(NotFoundException ex) {
-    return error(HttpStatus.NOT_FOUND, ex);
-  }
-
-  @ExceptionHandler(ConflictException.class)
-  ResponseEntity<ApiError> handleConflict(ConflictException ex) {
-    return error(HttpStatus.CONFLICT, ex);
-  }
-
-  @ExceptionHandler(BusinessRuleException.class)
-  ResponseEntity<ApiError> handleBusinessRule(BusinessRuleException ex) {
-    return error(HttpStatus.UNPROCESSABLE_CONTENT, ex);
+  @ExceptionHandler(ApiException.class)
+  ResponseEntity<ApiError> handleApiException(ApiException ex) {
+    return ResponseEntity.status(ex.getStatus()).body(ApiError.of(ex.getCode(), ex.getMessage()));
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -85,9 +73,5 @@ public class GlobalExceptionHandler {
     log.error("Eroare neașteptată", ex);
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
         .body(ApiError.of("EROARE_INTERNA", "A apărut o eroare neașteptată pe server."));
-  }
-
-  private static ResponseEntity<ApiError> error(HttpStatus status, ApiException ex) {
-    return ResponseEntity.status(status).body(ApiError.of(ex.getCode(), ex.getMessage()));
   }
 }

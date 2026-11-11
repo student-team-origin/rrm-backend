@@ -73,17 +73,17 @@ class GlobalExceptionHandlerTest {
 
     @GetMapping("/not-found")
     void notFound() {
-      throw new NotFoundException("RESURSA_INEXISTENTA", "Resursa nu există.");
+      throw ApiException.notFound("RESURSA_INEXISTENTA", "Resursa nu există.");
     }
 
     @GetMapping("/conflict")
     void conflict() {
-      throw new ConflictException("RESURSA_ARE_REZERVARI", "Resursa are rezervări.");
+      throw ApiException.conflict("RESURSA_ARE_REZERVARI", "Resursa are rezervări.");
     }
 
     @GetMapping("/business-rule")
     void businessRule() {
-      throw new BusinessRuleException("SOLD_INSUFICIENT", "Sold insuficient.");
+      throw ApiException.businessRule("SOLD_INSUFICIENT", "Sold insuficient.");
     }
 
     @PostMapping("/validate")
