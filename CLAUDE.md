@@ -157,6 +157,12 @@ Fiecare modul de domeniu conține: `XController`, `XService`, `XRepository`, `X`
   - 403: RBAC.
 - **Validare** a input-ului cu Jakarta Validation (`@Valid`, `@NotNull`...) pe DTO-uri.
 - **Date și ore:** `OffsetDateTime`/`Instant`, niciodată `java.util.Date`.
+- **Entități JPA** (model: `resource/Resource.java`):
+  - constructor `protected` fără argumente pentru JPA, plus un constructor public cu câmpurile obligatorii;
+  - getteri și setteri doar pentru câmpurile care se pot modifica; fără Lombok;
+  - asocierile `@ManyToOne` sunt `FetchType.LAZY`, deci se accesează doar în interiorul unei tranzacții (Service), nu în Controller (`open-in-view` este dezactivat);
+  - coloanele `text` au `columnDefinition = "text"`, iar cele `smallint` au `@JdbcTypeCode(SqlTypes.SMALLINT)`. Altfel validarea schemei (`ddl-auto: validate`) eșuează la pornire.
+- **Enumerări din contract** (ex. `ResourceStatus`): constantele sunt în stil Java (`ACTIVE`), iar valoarea din DB și JSON este cea din `openapi.yaml` (`"Activa"`). Legătura se face prin `@JsonValue`/`@JsonCreator` și un `AttributeConverter` cu `autoApply = true`.
 - **Denumiri:**
   - clase: `PascalCase`;
   - metode și variabile: `camelCase`;
