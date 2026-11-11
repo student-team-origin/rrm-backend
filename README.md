@@ -53,6 +53,22 @@ Valorile implicite (din `application.yml`) se potrivesc cu pașii de mai sus. Da
 | `PORT` | `8080` |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` (frontend-ul Vite) |
 
+## Baza de date
+
+Schema este gestionată de Flyway, prin fișierele din `src/main/resources/db/migration/`:
+
+| Migrare | Conținut |
+|---|---|
+| `V1__schema.sql` | Tabelele, constrângerile (inclusiv hard lock-ul rezervărilor), triggerul pentru timpul de pregătire, indecșii și view-ul `v_sold_grant` |
+| `V2__date_test.sql` | Date de test: utilizatori (parola tuturor: `parola123`), granturi, 2 laboratoare, 4 categorii, 6 resurse, 7 rezervări relative la ziua curentă |
+
+- O schimbare de schemă se face **doar printr-o migrare nouă** (`V3__descriere.sql`). Migrările ajunse pe `main` nu se modifică.
+- Pentru a reseta baza locală la datele de test:
+  ```bash
+  psql -d postgres -c "DROP DATABASE rrm_dev;" -c "CREATE DATABASE rrm_dev OWNER rrm;"
+  ```
+  La următoarea pornire, Flyway aplică din nou toate migrările.
+
 ## Comenzi
 
 | Comandă | Ce face |
