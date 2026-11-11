@@ -9,6 +9,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import ro.usv.rrm.laboratory.Laboratory;
@@ -21,10 +25,14 @@ import ro.usv.rrm.laboratory.Laboratory;
  */
 @Entity
 @Table(name = "resursa")
+@Getter
+@Setter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Resource {
 
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
+  @Setter(AccessLevel.NONE)
   private Long id;
 
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -51,72 +59,9 @@ public class Resource {
   @Column(name = "reguli_acces", columnDefinition = "text")
   private String accessRules;
 
-  /** Constructor cerut de JPA. */
-  protected Resource() {}
-
   public Resource(Laboratory laboratory, ResourceCategory category, String name) {
     this.laboratory = laboratory;
     this.category = category;
     this.name = name;
-  }
-
-  public Long getId() {
-    return id;
-  }
-
-  public Laboratory getLaboratory() {
-    return laboratory;
-  }
-
-  public void setLaboratory(Laboratory laboratory) {
-    this.laboratory = laboratory;
-  }
-
-  public ResourceCategory getCategory() {
-    return category;
-  }
-
-  public void setCategory(ResourceCategory category) {
-    this.category = category;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public void setName(String name) {
-    this.name = name;
-  }
-
-  public String getSpecifications() {
-    return specifications;
-  }
-
-  public void setSpecifications(String specifications) {
-    this.specifications = specifications;
-  }
-
-  public ResourceStatus getStatus() {
-    return status;
-  }
-
-  public void setStatus(ResourceStatus status) {
-    this.status = status;
-  }
-
-  public int getPreparationTimeMinutes() {
-    return preparationTimeMinutes;
-  }
-
-  public void setPreparationTimeMinutes(int preparationTimeMinutes) {
-    this.preparationTimeMinutes = preparationTimeMinutes;
-  }
-
-  public String getAccessRules() {
-    return accessRules;
-  }
-
-  public void setAccessRules(String accessRules) {
-    this.accessRules = accessRules;
   }
 }

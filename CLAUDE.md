@@ -7,7 +7,7 @@ API REST pentru **Research Resource Manager**: platforma de rezervare a resursel
 - Confluence (spațiul proiectului): PRD, *Document de Arhitectură*, *Ghid de Dezvoltare*
 
 ## Stack
-Java 21 · Spring Boot 4.1 · Maven (`./mvnw`) · Spring Security + JWT · Spring Data JPA · PostgreSQL · Flyway · JUnit 5 + Mockito
+Java 21 · Spring Boot 4.1 · Lombok · Maven (`./mvnw`) · Spring Security + JWT · Spring Data JPA · PostgreSQL · Flyway · JUnit 5 + Mockito
 
 ## Surse de adevăr
 - **`docs/openapi.yaml`** este contractul API. Orice endpoint nou sau modificat se actualizează **întâi** aici, apoi în cod. Frontend-ul își generează tipurile din acest fișier.
@@ -123,19 +123,20 @@ ro.usv.rrm
 ├── report/
 ├── scheduler/       memento-uri, auto-anulare fără check-in
 └── common/
-    ├── config/      WebConfig, SecurityConfig
-    ├── error/       ApiError, NotFound/Conflict/BusinessRuleException, GlobalExceptionHandler
+    ├── config/      RrmProperties, WebConfig, SecurityConfig
+    ├── error/       ApiError, ApiException, GlobalExceptionHandler
     └── web/         PageResponse
 ```
 Fiecare modul de domeniu conține: `XController`, `XService`, `XRepository`, `X` (entitate), `dto/`.
 
 ### Infrastructura comună (folosește-o, nu o duplica)
 - **Prefixul `/api/v1` se adaugă automat** tuturor `@RestController` (`WebConfig`). Controllerul declară doar `@RequestMapping("/resources")`.
-- **Erori:** aruncă `NotFoundException` (404), `ConflictException` (409) sau `BusinessRuleException` (422) din `common.error`, cu un cod stabil în `UPPER_SNAKE_CASE` în română și un mesaj pentru utilizator:
+- **Erori:** aruncă `ApiException` din `common.error`, prin metodele de fabrică `notFound` (404), `conflict` (409) sau `businessRule` (422), cu un cod stabil în `UPPER_SNAKE_CASE` în română și un mesaj pentru utilizator:
   ```java
-  throw new NotFoundException("RESURSA_INEXISTENTA", "Resursa cu id-ul " + id + " nu există.");
+  throw ApiException.notFound("RESURSA_INEXISTENTA", "Resursa cu id-ul " + id + " nu există.");
   ```
-  Pentru cazuri des folosite poți extinde aceste clase (`class ResourceNotFoundException extends NotFoundException`). Validarea `@Valid` produce automat 400 cu `fields`.
+  Nu crea clase de excepții noi pentru fiecare caz. Validarea `@Valid` produce automat 400 cu `fields`.
+- **Configurație:** setările proprii stau în secțiunea `rrm:` din `application.yml` și se citesc prin `RrmProperties` (`record` cu `@ConfigurationProperties`), injectat în constructor. Nu folosi `@Value`.
 - **Liste paginate:** întoarce `PageResponse.from(page, ResourceResponse::from)`. Forma JSON (`items`, `page`, `size`, `total`) este cea din `openapi.yaml`.
 - **Securitatea** este momentan deschisă (`permitAll` în `SecurityConfig`) până la TO-1/TO-3.
 - **Câmpurile JSON urmează `openapi.yaml`** (în română: `denumire`, `categorieId`, `stare`...). Numele componentelor record din DTO-uri sunt cele din contract, chiar dacă clasele și restul codului sunt în engleză.
@@ -143,14 +144,18 @@ Fiecare modul de domeniu conține: `XController`, `XService`, `XRepository`, `X`
 ### Reguli
 - **Straturi:** Controller → Service → Repository. Controllerul nu conține logică și nu folosește direct un Repository. Un Service poate apela alte Service-uri, dar nu Repository-urile altui modul.
 - **DTO-uri** ca `record` (`CreateReservationRequest`, `ReservationResponse`). Entitățile JPA nu se expun niciodată în API.
-- **Injecție prin constructor**, cu câmpuri `private final`. Fără `@Autowired` pe câmpuri.
+- **Fără boilerplate:**
+  - **Lombok** pentru entități și clasele Spring, nu getteri, setteri sau constructori scriși de mână;
+  - **`record`** pentru DTO-uri și configurații.
+- **Injecție prin constructor** cu câmpuri `private final` + `@RequiredArgsConstructor`. Fără `@Autowired` pe câmpuri.
+- **Logging** cu `@Slf4j` (Lombok).
 - **`@Transactional`** se pune pe metodele din Service. Verificarea suprapunerii, verificarea soldului și salvarea cererii se fac în **aceeași tranzacție** (hard lock, TO-5).
 - **Hard lock-ul este garantat de baza de date**, nu doar de cod:
   - constrângerea `rezervare_fara_suprapunere` (`EXCLUDE USING gist` pe `tstzrange(start, sfarsit_blocat)`);
   - triggerul care calculează `sfarsit_blocat` (sfârșit + timpul de pregătire).
   
   Nu le elimina și nu le ocoli. Verificarea din Service servește doar ca să întoarcă un mesaj clar. Încălcarea constrângerii (`DataIntegrityViolationException`) se transformă tot în **409**.
-- **Erori:** se aruncă excepțiile din `common.error` (sau subclase ale lor), tratate în `GlobalExceptionHandler`. Codurile HTTP trebuie să corespundă cu `openapi.yaml`:
+- **Erori:** se aruncă `ApiException`, tratată în `GlobalExceptionHandler`. Codurile HTTP trebuie să corespundă cu `openapi.yaml`:
   - 404: nu există;
   - 409: interval ocupat;
   - 422: sold insuficient sau regulă de business încălcată;
@@ -158,8 +163,9 @@ Fiecare modul de domeniu conține: `XController`, `XService`, `XRepository`, `X`
 - **Validare** a input-ului cu Jakarta Validation (`@Valid`, `@NotNull`...) pe DTO-uri.
 - **Date și ore:** `OffsetDateTime`/`Instant`, niciodată `java.util.Date`.
 - **Entități JPA** (model: `resource/Resource.java`):
-  - constructor `protected` fără argumente pentru JPA, plus un constructor public cu câmpurile obligatorii;
-  - getteri și setteri doar pentru câmpurile care se pot modifica; fără Lombok;
+  - `@Getter`, `@Setter` și `@NoArgsConstructor(access = AccessLevel.PROTECTED)` pe clasă, plus un constructor public cu câmpurile obligatorii;
+  - id-ul nu are setter (`@Setter(AccessLevel.NONE)`);
+  - **fără `@Data`, `@EqualsAndHashCode` sau `@ToString`** pe entități: încarcă asocierile LAZY și pot intra în buclă;
   - asocierile `@ManyToOne` sunt `FetchType.LAZY`, deci se accesează doar în interiorul unei tranzacții (Service), nu în Controller (`open-in-view` este dezactivat);
   - coloanele `text` au `columnDefinition = "text"`, iar cele `smallint` au `@JdbcTypeCode(SqlTypes.SMALLINT)`. Altfel validarea schemei (`ddl-auto: validate`) eșuează la pornire.
 - **Enumerări din contract** (ex. `ResourceStatus`): constantele sunt în stil Java (`ACTIVE`), iar valoarea din DB și JSON este cea din `openapi.yaml` (`"Activa"`). Legătura se face prin `@JsonValue`/`@JsonCreator` și un `AttributeConverter` cu `autoApply = true`.

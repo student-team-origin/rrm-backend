@@ -6,14 +6,22 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /** Un laborator de cercetare, cu un responsabil care validează rezervările resurselor sale. */
 @Entity
 @Table(name = "laborator")
+@Getter
+@Setter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Laboratory {
 
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
+  @Setter(AccessLevel.NONE)
   private Long id;
 
   @Column(name = "denumire", nullable = false, length = 80)
@@ -29,40 +37,9 @@ public class Laboratory {
   @Column(name = "responsabil_id", nullable = false)
   private Long responsibleId;
 
-  /** Constructor cerut de JPA. */
-  protected Laboratory() {}
-
   public Laboratory(String name, String location, Long responsibleId) {
     this.name = name;
     this.location = location;
-    this.responsibleId = responsibleId;
-  }
-
-  public Long getId() {
-    return id;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public void setName(String name) {
-    this.name = name;
-  }
-
-  public String getLocation() {
-    return location;
-  }
-
-  public void setLocation(String location) {
-    this.location = location;
-  }
-
-  public Long getResponsibleId() {
-    return responsibleId;
-  }
-
-  public void setResponsibleId(Long responsibleId) {
     this.responsibleId = responsibleId;
   }
 }

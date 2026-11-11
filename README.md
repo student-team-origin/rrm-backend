@@ -15,7 +15,7 @@ Funcționalități principale:
 | Categorie | Tehnologie |
 |---|---|
 | Limbaj | Java 21 |
-| Framework | Spring Boot 4.1 (Web MVC, Security, Data JPA, Validation) |
+| Framework | Spring Boot 4.1 (Web MVC, Security, Data JPA, Validation), Lombok |
 | Bază de date | PostgreSQL 16+ + Flyway (migrări) |
 | Autentificare | JWT, 2FA (TOTP / cod pe e-mail), RBAC |
 | Build | Maven (wrapper `./mvnw`) |
@@ -82,8 +82,8 @@ Schema este gestionată de Flyway, prin fișierele din `src/main/resources/db/mi
 ```
 src/main/java/ro/usv/rrm/
 ├── common/
-│   ├── config/      WebConfig (prefix /api/v1), SecurityConfig (CORS, securitate)
-│   ├── error/       ApiError, excepții de domeniu, GlobalExceptionHandler
+│   ├── config/      RrmProperties (setările rrm.*), WebConfig (prefix /api/v1), SecurityConfig
+│   ├── error/       ApiError, ApiException, GlobalExceptionHandler
 │   └── web/         PageResponse (răspuns paginat)
 ├── auth/  user/  grant/  laboratory/  resource/      (module de domeniu)
 ├── reservation/  approval/  notification/  report/
