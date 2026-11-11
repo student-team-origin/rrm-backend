@@ -7,7 +7,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Starea logică a unei resurse (enumerarea {@code StareResursa} din docs/openapi.yaml).
+ * Starea logică a unei resurse (enumerarea {@code StareResursa} din api-contract/openapi.yaml).
  *
  * <p>Constantele respectă stilul Java; valoarea din baza de date și din JSON este cea din contract
  * ({@code Activa}, {@code Mentenanta}, {@code Defecta}).

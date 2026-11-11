@@ -23,7 +23,7 @@ server:
     include-stacktrace: never
 
 rrm:
-  # Prefixul tuturor endpoint-urilor REST (vezi docs/openapi.yaml -> servers)
+  # Prefixul tuturor endpoint-urilor REST (vezi api-contract/openapi.yaml -> servers)
   api-prefix: /api/v1
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
