@@ -1,0 +1,1244 @@
+openapi: 3.0.3
+info:
+  title: Research Resource Manager API
+  version: 1.0.0
+  description: |
+    API REST pentru platforma de gestionare și rezervare a resurselor de cercetare
+    (echipamente, roboți educaționali, spații de laborator).
+
+    - Autentificare: JWT (Bearer), cu 2FA (TOTP / cod pe e-mail) și dispozitiv de încredere 5 zile.
+    - Sesiunea expiră după 60 de minute de inactivitate.
+    - Autorizare: RBAC cu scop (Student, CoordonatorGrant, ResponsabilLaborator, AdministratorSistem),
+      fiecare rol limitat la global / grant / laborator.
+    - Rezervări fără suprapuneri (hard lock tranzacțional, inclusiv timp de pregătire).
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Mediu local de dezvoltare
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Autentificare
+    description: Login, 2FA, SSO, sesiune
+  - name: Utilizatori
+    description: Gestionarea utilizatorilor și a rolurilor (Administrator Sistem)
+  - name: Granturi
+    description: Granturi de cercetare, membri și sold de ore
+  - name: Laboratoare
+    description: Laboratoare și responsabilii lor
+  - name: Resurse
+    description: Catalogul de resurse, categorii și atașamente PDF
+  - name: Rezervări
+    description: Cereri de rezervare, disponibilitate, check-in, anulare
+  - name: Aprobări
+    description: Fluxul de aprobare pe 2 niveluri (Coordonator Grant, apoi Responsabil Laborator)
+  - name: Notificări
+    description: Notificări în dashboard
+  - name: Rapoarte
+    description: Rapoarte de utilizare și export PDF / Excel
+
+paths:
+  # ───────────────────────── Autentificare ─────────────────────────
+  /auth/login:
+    post:
+      operationId: postAuthLogin
+      tags: [Autentificare]
+      summary: Autentificare cu e-mail instituțional și parolă
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: >
+            Credențiale valide. Dacă dispozitivul este de încredere se returnează direct tokenul,
+            altfel se cere codul 2FA (twoFactorRequired = true).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/2fa/verify:
+    post:
+      operationId: postAuth2faVerify
+      tags: [Autentificare]
+      summary: Verificarea codului 2FA
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TwoFactorVerifyRequest' }
+      responses:
+        '200':
+          description: Cod valid; se emite tokenul JWT (și tokenul de dispozitiv, dacă s-a cerut)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/2fa/email-code:
+    post:
+      operationId: postAuth2faEmailCode
+      tags: [Autentificare]
+      summary: Trimiterea codului 2FA pe e-mail
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challengeId]
+              properties:
+                challengeId: { type: string, example: 'ch_8f2a91' }
+      responses:
+        '204': { description: Codul a fost trimis pe e-mail }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /auth/sso/callback:
+    get:
+      operationId: getAuthSsoCallback
+      tags: [Autentificare]
+      summary: Callback SSO universitar (OAuth2 / OpenID Connect)
+      security: []
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Utilizator autentificat prin SSO (domeniu @usv.ro validat)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      operationId: postAuthLogout
+      tags: [Autentificare]
+      summary: Deconectare (invalidează tokenul pe server)
+      responses:
+        '204': { description: Sesiune închisă }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/me:
+    get:
+      operationId: getAuthMe
+      tags: [Autentificare]
+      summary: Utilizatorul curent și rolurile sale
+      responses:
+        '200':
+          description: Profilul utilizatorului autentificat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Utilizator' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ───────────────────────── Utilizatori ─────────────────────────
+  /users:
+    get:
+      operationId: getUsers
+      tags: [Utilizatori]
+      summary: Lista utilizatorilor (Administrator Sistem)
+      parameters:
+        - { name: rol, in: query, schema: { $ref: '#/components/schemas/Rol' } }
+        - { name: q, in: query, description: Căutare după nume sau e-mail, schema: { type: string } }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Pagină de utilizatori
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageMeta'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Utilizator' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: postUsers
+      tags: [Utilizatori]
+      summary: Invitarea unui utilizator nou
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UtilizatorCreate' }
+      responses:
+        '201':
+          description: Utilizator creat; se trimite invitația pe e-mail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Utilizator' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /users/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      operationId: getUsersByUserId
+      tags: [Utilizatori]
+      summary: Detaliile unui utilizator
+      responses:
+        '200':
+          description: Utilizator
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Utilizator' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: patchUsersByUserId
+      tags: [Utilizatori]
+      summary: Actualizarea unui utilizator (nume, activ/inactiv)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UtilizatorUpdate' }
+      responses:
+        '200':
+          description: Utilizator actualizat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Utilizator' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /users/{userId}/roles:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    put:
+      operationId: putUsersByUserIdRoles
+      tags: [Utilizatori]
+      summary: Setarea rolurilor unui utilizator (RBAC cu scop)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              items: { $ref: '#/components/schemas/UtilizatorRol' }
+      responses:
+        '200':
+          description: Roluri actualizate
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/UtilizatorRol' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ───────────────────────── Granturi ─────────────────────────
+  /grants:
+    get:
+      operationId: getGrants
+      tags: [Granturi]
+      summary: Lista granturilor (utilizatorul vede granturile din care face parte)
+      responses:
+        '200':
+          description: Granturi
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Grant' }
+    post:
+      operationId: postGrants
+      tags: [Granturi]
+      summary: Crearea unui grant (Administrator Sistem)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GrantCreate' }
+      responses:
+        '201':
+          description: Grant creat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Grant' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /grants/{grantId}:
+    parameters:
+      - $ref: '#/components/parameters/GrantId'
+    get:
+      operationId: getGrantsByGrantId
+      tags: [Granturi]
+      summary: Detaliile unui grant, inclusiv soldul de ore
+      responses:
+        '200':
+          description: Grant
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Grant' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: patchGrantsByGrantId
+      tags: [Granturi]
+      summary: Actualizarea unui grant (ore alocate, perioadă)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GrantUpdate' }
+      responses:
+        '200':
+          description: Grant actualizat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Grant' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /grants/{grantId}/members:
+    parameters:
+      - $ref: '#/components/parameters/GrantId'
+    get:
+      operationId: getGrantsByGrantIdMembers
+      tags: [Granturi]
+      summary: Membrii unui grant
+      responses:
+        '200':
+          description: Membri
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MembruGrant' }
+    post:
+      operationId: postGrantsByGrantIdMembers
+      tags: [Granturi]
+      summary: Adăugarea unui membru (Coordonator Grant / Administrator)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [utilizatorId]
+              properties:
+                utilizatorId: { type: integer, example: 12 }
+      responses:
+        '201':
+          description: Membru adăugat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembruGrant' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /grants/{grantId}/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/GrantId'
+      - $ref: '#/components/parameters/UserId'
+    delete:
+      operationId: deleteGrantsByGrantIdMembersByUserId
+      tags: [Granturi]
+      summary: Eliminarea unui membru din grant
+      responses:
+        '204': { description: Membru eliminat }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────── Laboratoare ─────────────────────────
+  /labs:
+    get:
+      operationId: getLabs
+      tags: [Laboratoare]
+      summary: Lista laboratoarelor
+      responses:
+        '200':
+          description: Laboratoare
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Laborator' }
+    post:
+      operationId: postLabs
+      tags: [Laboratoare]
+      summary: Crearea unui laborator (Administrator Sistem)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LaboratorCreate' }
+      responses:
+        '201':
+          description: Laborator creat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Laborator' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /labs/{labId}:
+    parameters:
+      - $ref: '#/components/parameters/LabId'
+    get:
+      operationId: getLabsByLabId
+      tags: [Laboratoare]
+      summary: Detaliile unui laborator
+      responses:
+        '200':
+          description: Laborator
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Laborator' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: patchLabsByLabId
+      tags: [Laboratoare]
+      summary: Actualizarea unui laborator (denumire, locație, responsabil)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LaboratorCreate' }
+      responses:
+        '200':
+          description: Laborator actualizat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Laborator' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ───────────────────────── Resurse ─────────────────────────
+  /resource-categories:
+    get:
+      operationId: getResourceCategories
+      tags: [Resurse]
+      summary: Categoriile de resurse
+      responses:
+        '200':
+          description: Categorii
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CategorieResursa' }
+
+  /resources:
+    get:
+      operationId: getResources
+      tags: [Resurse]
+      summary: Căutare și filtrare în catalogul de resurse
+      parameters:
+        - { name: q, in: query, description: Text în denumire sau specificații, schema: { type: string } }
+        - { name: categorieId, in: query, schema: { type: integer } }
+        - { name: laboratorId, in: query, schema: { type: integer } }
+        - { name: stare, in: query, schema: { $ref: '#/components/schemas/StareResursa' } }
+        - { name: disponibilLa, in: query, description: Doar resursele libere la data indicată, schema: { type: string, format: date } }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Pagină de resurse
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageMeta'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Resursa' }
+    post:
+      operationId: postResources
+      tags: [Resurse]
+      summary: Adăugarea unei resurse (Responsabil Laborator)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResursaCreate' }
+      responses:
+        '201':
+          description: Resursă creată
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Resursa' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /resources/{resourceId}:
+    parameters:
+      - $ref: '#/components/parameters/ResourceId'
+    get:
+      operationId: getResourcesByResourceId
+      tags: [Resurse]
+      summary: Detaliile unei resurse
+      responses:
+        '200':
+          description: Resursă
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Resursa' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: putResourcesByResourceId
+      tags: [Resurse]
+      summary: Actualizarea unei resurse
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResursaCreate' }
+      responses:
+        '200':
+          description: Resursă actualizată
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Resursa' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteResourcesByResourceId
+      tags: [Resurse]
+      summary: Ștergerea unei resurse (doar fără rezervări viitoare)
+      responses:
+        '204': { description: Resursă ștearsă }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /resources/{resourceId}/status:
+    parameters:
+      - $ref: '#/components/parameters/ResourceId'
+    patch:
+      operationId: patchResourcesByResourceIdStatus
+      tags: [Resurse]
+      summary: Schimbarea stării unei resurse (Activă / Mentenanță / Defectă)
+      description: >
+        Trecerea în Mentenanță sau Defectă anulează rezervările în așteptare sau aprobate
+        din intervalul afectat și trimite notificări de urgență utilizatorilor.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stare]
+              properties:
+                stare: { $ref: '#/components/schemas/StareResursa' }
+                motiv: { type: string, example: 'Calibrare anuală' }
+      responses:
+        '200':
+          description: Stare actualizată
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resursa: { $ref: '#/components/schemas/Resursa' }
+                  rezervariAnulate: { type: integer, example: 3 }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /resources/{resourceId}/availability:
+    parameters:
+      - $ref: '#/components/parameters/ResourceId'
+    get:
+      operationId: getResourcesByResourceIdAvailability
+      tags: [Resurse]
+      summary: Disponibilitatea unei resurse (pentru calendar)
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Intervalele ocupate (inclusiv timpul de pregătire)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IntervalOcupat' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /resources/{resourceId}/attachments:
+    parameters:
+      - $ref: '#/components/parameters/ResourceId'
+    get:
+      operationId: getResourcesByResourceIdAttachments
+      tags: [Resurse]
+      summary: Atașamentele PDF ale unei resurse
+      responses:
+        '200':
+          description: Atașamente
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Atasament' }
+    post:
+      operationId: postResourcesByResourceIdAttachments
+      tags: [Resurse]
+      summary: Încărcarea unui fișier PDF (fișă tehnică, regulament)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [fisier]
+              properties:
+                fisier: { type: string, format: binary }
+      responses:
+        '201':
+          description: Atașament salvat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Atasament' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /attachments/{attachmentId}:
+    parameters:
+      - { name: attachmentId, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: getAttachmentsByAttachmentId
+      tags: [Resurse]
+      summary: Descărcarea unui atașament
+      responses:
+        '200':
+          description: Fișierul PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteAttachmentsByAttachmentId
+      tags: [Resurse]
+      summary: Ștergerea unui atașament
+      responses:
+        '204': { description: Atașament șters }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ───────────────────────── Rezervări ─────────────────────────
+  /reservations:
+    get:
+      operationId: getReservations
+      tags: [Rezervări]
+      summary: Rezervările utilizatorului curent („Rezervările mele”)
+      parameters:
+        - { name: stare, in: query, schema: { $ref: '#/components/schemas/StareRezervare' } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Pagină de rezervări
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageMeta'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Rezervare' }
+    post:
+      operationId: postReservations
+      tags: [Rezervări]
+      summary: Crearea unei cereri de rezervare
+      description: >
+        Într-o singură tranzacție (hard lock): se verifică suprapunerea intervalului
+        (inclusiv timpul de pregătire), soldul de ore al grantului și starea resursei,
+        apoi se salvează cererea cu starea ÎnAșteptareCoordonator și se notifică coordonatorul.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RezervareCreate' }
+      responses:
+        '201':
+          description: Cerere creată
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rezervare' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: Interval ocupat; se returnează intervalele libere din aceeași zi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConflictInterval' }
+        '422':
+          description: Sold de ore insuficient pe grant sau resursă indisponibilă
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /reservations/{reservationId}:
+    parameters:
+      - $ref: '#/components/parameters/ReservationId'
+    get:
+      operationId: getReservationsByReservationId
+      tags: [Rezervări]
+      summary: Detaliile unei rezervări, cu istoricul aprobărilor
+      responses:
+        '200':
+          description: Rezervare
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RezervareDetaliu' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /reservations/{reservationId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/ReservationId'
+    post:
+      operationId: postReservationsByReservationIdCancel
+      tags: [Rezervări]
+      summary: Anularea unei rezervări de către solicitant
+      description: Permis în stările ÎnAșteptareCoordonator, ÎnAșteptareLaborator și Aprobată (înainte de start).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                motiv: { type: string }
+      responses:
+        '200':
+          description: Rezervare anulată; intervalul a fost eliberat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rezervare' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /reservations/{reservationId}/check-in:
+    parameters:
+      - $ref: '#/components/parameters/ReservationId'
+    post:
+      operationId: postReservationsByReservationIdCheckIn
+      tags: [Rezervări]
+      summary: Confirmarea prezenței (check-in)
+      description: >
+        Permis doar pentru rezervări Aprobate, în fereastra de 15–30 de minute de la începutul
+        intervalului. După fereastră, Scheduler-ul trece rezervarea în AnulatăAutomat.
+      responses:
+        '200':
+          description: Check-in efectuat; rezervarea devine Activă
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rezervare' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: În afara ferestrei de check-in sau rezervare deja anulată
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # ───────────────────────── Aprobări ─────────────────────────
+  /approvals:
+    get:
+      operationId: getApprovals
+      tags: [Aprobări]
+      summary: Cererile care așteaptă decizia utilizatorului curent
+      description: >
+        Coordonatorul vede cererile ÎnAșteptareCoordonator de pe granturile sale;
+        Responsabilul de laborator vede cererile ÎnAșteptareLaborator din laboratoarele sale.
+      parameters:
+        - { name: stare, in: query, schema: { type: string, enum: [inAsteptare, aprobate, respinse], default: inAsteptare } }
+      responses:
+        '200':
+          description: Cereri
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RezervareDetaliu' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /approvals/{reservationId}/approve:
+    parameters:
+      - $ref: '#/components/parameters/ReservationId'
+    post:
+      operationId: postApprovalsByReservationIdApprove
+      tags: [Aprobări]
+      summary: Aprobarea cererii la nivelul curent
+      description: >
+        Coordonatorul aprobă (nivel 1) → ÎnAșteptareLaborator; Responsabilul validează
+        (nivel 2) → Aprobată. Solicitantul este notificat la fiecare schimbare.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecizieRequest' }
+      responses:
+        '200':
+          description: Decizie înregistrată
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Aprobare' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /approvals/{reservationId}/reject:
+    parameters:
+      - $ref: '#/components/parameters/ReservationId'
+    post:
+      operationId: postApprovalsByReservationIdReject
+      tags: [Aprobări]
+      summary: Respingerea cererii (motivul este obligatoriu)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/DecizieRequest'
+                - required: [observatie]
+      responses:
+        '200':
+          description: Cerere respinsă; intervalul a fost eliberat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Aprobare' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ───────────────────────── Notificări ─────────────────────────
+  /notifications:
+    get:
+      operationId: getNotifications
+      tags: [Notificări]
+      summary: Notificările utilizatorului curent
+      parameters:
+        - { name: necitite, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: Notificări
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Notificare' }
+
+  /notifications/{notificationId}/read:
+    parameters:
+      - { name: notificationId, in: path, required: true, schema: { type: integer } }
+    patch:
+      operationId: patchNotificationsByNotificationIdRead
+      tags: [Notificări]
+      summary: Marcarea unei notificări ca citită
+      responses:
+        '204': { description: Marcată ca citită }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /notifications/read-all:
+    post:
+      operationId: postNotificationsReadAll
+      tags: [Notificări]
+      summary: Marcarea tuturor notificărilor ca citite
+      responses:
+        '204': { description: Toate marcate ca citite }
+
+  # ───────────────────────── Rapoarte ─────────────────────────
+  /reports/usage:
+    get:
+      operationId: getReportsUsage
+      tags: [Rapoarte]
+      summary: Statistici de utilizare (dashboard rapoarte)
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - { name: laboratorId, in: query, schema: { type: integer } }
+        - { name: grantId, in: query, schema: { type: integer } }
+        - { name: utilizatorId, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: Indicatori și serii pentru grafice
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RaportUtilizare' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /reports/export:
+    get:
+      operationId: getReportsExport
+      tags: [Rapoarte]
+      summary: Export raport de audit (PDF sau Excel)
+      parameters:
+        - { name: format, in: query, required: true, schema: { type: string, enum: [pdf, xlsx] } }
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - { name: laboratorId, in: query, schema: { type: integer } }
+        - { name: grantId, in: query, schema: { type: integer } }
+        - { name: utilizatorId, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: Fișierul generat pe server
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    UserId:
+      { name: userId, in: path, required: true, schema: { type: integer } }
+    GrantId:
+      { name: grantId, in: path, required: true, schema: { type: integer } }
+    LabId:
+      { name: labId, in: path, required: true, schema: { type: integer } }
+    ResourceId:
+      { name: resourceId, in: path, required: true, schema: { type: integer } }
+    ReservationId:
+      { name: reservationId, in: path, required: true, schema: { type: integer } }
+    Page:
+      { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+    Size:
+      { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+    From:
+      { name: from, in: query, required: true, schema: { type: string, format: date } }
+    To:
+      { name: to, in: query, required: true, schema: { type: string, format: date } }
+
+  responses:
+    BadRequest:
+      description: Date invalide
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Neautentificat, token invalid sau sesiune expirată
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Rolul utilizatorului nu permite operația
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resursa nu există
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Conflict cu starea curentă
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    # ── Enumerări ──
+    Rol:
+      type: string
+      enum: [Student, CoordonatorGrant, ResponsabilLaborator, AdministratorSistem]
+    TipScop:
+      type: string
+      enum: [Global, Grant, Laborator]
+    StareResursa:
+      type: string
+      enum: [Activa, Mentenanta, Defecta]
+    StareRezervare:
+      type: string
+      enum: [InAsteptareCoordonator, InAsteptareLaborator, Aprobata, Activa, Finalizata, Respinsa, Anulata, AnulataAutomat]
+    Decizie:
+      type: string
+      enum: [Aprobat, Respins]
+
+    # ── Comune ──
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: 'INTERVAL_OCUPAT' }
+        message: { type: string, example: 'Intervalul selectat se suprapune cu o altă rezervare.' }
+        fields:
+          type: object
+          description: Doar pentru 400 — erorile de validare, pe câmpuri (nume câmp → mesaj)
+          additionalProperties: { type: string }
+          example: { denumire: 'nu trebuie să fie gol' }
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer, example: 0 }
+        size: { type: integer, example: 20 }
+        total: { type: integer, example: 64 }
+
+    # ── Autentificare ──
+    LoginRequest:
+      type: object
+      required: [email, parola]
+      properties:
+        email: { type: string, format: email, example: 'nume.prenume@student.usv.ro' }
+        parola: { type: string, format: password }
+        deviceToken:
+          type: string
+          description: Tokenul dispozitivului de încredere (valabil 5 zile), dacă există
+    LoginResponse:
+      type: object
+      properties:
+        twoFactorRequired: { type: boolean, example: true }
+        challengeId: { type: string, example: 'ch_8f2a91', description: Prezent când twoFactorRequired = true }
+        tokens: { $ref: '#/components/schemas/AuthTokens' }
+    TwoFactorVerifyRequest:
+      type: object
+      required: [challengeId, cod]
+      properties:
+        challengeId: { type: string, example: 'ch_8f2a91' }
+        cod: { type: string, pattern: '^[0-9]{6}$', example: '482913' }
+        tineMinteDispozitiv: { type: boolean, default: false, description: Salvează dispozitivul 5 zile }
+    AuthTokens:
+      type: object
+      properties:
+        accessToken: { type: string }
+        expiresIn: { type: integer, example: 3600, description: Secunde până la expirare }
+        deviceToken: { type: string, description: Returnat doar dacă tineMinteDispozitiv = true }
+
+    # ── Utilizatori ──
+    UtilizatorRol:
+      type: object
+      required: [rol, tipScop]
+      properties:
+        rol: { $ref: '#/components/schemas/Rol' }
+        tipScop: { $ref: '#/components/schemas/TipScop' }
+        scopId:
+          type: integer
+          nullable: true
+          description: ID-ul grantului sau laboratorului; null pentru Global
+          example: 3
+    Utilizator:
+      type: object
+      properties:
+        id: { type: integer, example: 12 }
+        nume: { type: string, example: 'Vladislav Shorodok' }
+        email: { type: string, format: email, example: 'vladislav.shorodok@student.usv.ro' }
+        activ: { type: boolean, example: true }
+        doiFactoriActiv: { type: boolean, example: true }
+        roluri:
+          type: array
+          items: { $ref: '#/components/schemas/UtilizatorRol' }
+    UtilizatorCreate:
+      type: object
+      required: [nume, email, roluri]
+      properties:
+        nume: { type: string }
+        email: { type: string, format: email }
+        roluri:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/UtilizatorRol' }
+    UtilizatorUpdate:
+      type: object
+      properties:
+        nume: { type: string }
+        activ: { type: boolean }
+
+    # ── Granturi ──
+    Grant:
+      type: object
+      properties:
+        id: { type: integer, example: 3 }
+        cod: { type: string, example: 'PN-III-P4-2026' }
+        coordonatorId: { type: integer, example: 7 }
+        oreAlocate: { type: number, example: 120 }
+        oreConsumate: { type: number, readOnly: true, example: 78, description: Calculat din rezervările grantului }
+        oreRamase: { type: number, readOnly: true, example: 42 }
+        dataStart: { type: string, format: date }
+        dataSfarsit: { type: string, format: date }
+    GrantCreate:
+      type: object
+      required: [cod, coordonatorId, oreAlocate, dataStart, dataSfarsit]
+      properties:
+        cod: { type: string }
+        coordonatorId: { type: integer }
+        oreAlocate: { type: number, minimum: 0 }
+        dataStart: { type: string, format: date }
+        dataSfarsit: { type: string, format: date }
+    GrantUpdate:
+      type: object
+      properties:
+        coordonatorId: { type: integer }
+        oreAlocate: { type: number, minimum: 0 }
+        dataSfarsit: { type: string, format: date }
+    MembruGrant:
+      type: object
+      properties:
+        utilizatorId: { type: integer, example: 12 }
+        nume: { type: string, example: 'Andrei Popescu' }
+        dataAderare: { type: string, format: date }
+
+    # ── Laboratoare ──
+    Laborator:
+      type: object
+      properties:
+        id: { type: integer, example: 2 }
+        denumire: { type: string, example: 'Laborator Robotică' }
+        locatie: { type: string, example: 'Corp C, C204' }
+        responsabilId: { type: integer, example: 9 }
+    LaboratorCreate:
+      type: object
+      required: [denumire, locatie, responsabilId]
+      properties:
+        denumire: { type: string }
+        locatie: { type: string }
+        responsabilId: { type: integer }
+
+    # ── Resurse ──
+    CategorieResursa:
+      type: object
+      properties:
+        id: { type: integer, example: 1 }
+        denumire: { type: string, example: 'Robot educațional' }
+    Resursa:
+      type: object
+      properties:
+        id: { type: integer, example: 15 }
+        denumire: { type: string, example: 'Braț robotic UR5' }
+        specificatii: { type: string, example: '6 axe, sarcină utilă 5 kg, rază 850 mm' }
+        stare: { $ref: '#/components/schemas/StareResursa' }
+        timpPregatireMin: { type: integer, example: 15, description: Buffer adăugat după fiecare rezervare }
+        reguliAcces: { type: string, example: 'Necesită instruire SSM' }
+        categorie: { $ref: '#/components/schemas/CategorieResursa' }
+        laboratorId: { type: integer, example: 2 }
+    ResursaCreate:
+      type: object
+      required: [denumire, categorieId, laboratorId]
+      properties:
+        denumire: { type: string }
+        specificatii: { type: string }
+        categorieId: { type: integer }
+        laboratorId: { type: integer }
+        timpPregatireMin: { type: integer, minimum: 0, default: 0 }
+        reguliAcces: { type: string }
+    Atasament:
+      type: object
+      properties:
+        id: { type: integer, example: 4 }
+        numeFisier: { type: string, example: 'fisa_tehnica_UR5.pdf' }
+        url: { type: string, example: '/api/v1/attachments/4' }
+    IntervalOcupat:
+      type: object
+      properties:
+        start: { type: string, format: date-time }
+        sfarsit: { type: string, format: date-time, description: Include timpul de pregătire }
+        stare: { $ref: '#/components/schemas/StareRezervare' }
+
+    # ── Rezervări ──
+    RezervareCreate:
+      type: object
+      required: [resursaId, grantId, start, sfarsit, scop]
+      properties:
+        resursaId: { type: integer, example: 15 }
+        grantId: { type: integer, example: 3 }
+        start: { type: string, format: date-time, example: '2026-11-10T10:00:00+02:00' }
+        sfarsit: { type: string, format: date-time, example: '2026-11-10T12:00:00+02:00' }
+        scop: { type: string, example: 'Testare traiectorii pentru grantul PN-III' }
+    Rezervare:
+      type: object
+      properties:
+        id: { type: integer, example: 101 }
+        resursaId: { type: integer, example: 15 }
+        grantId: { type: integer, example: 3 }
+        solicitantId: { type: integer, example: 12 }
+        stare: { $ref: '#/components/schemas/StareRezervare' }
+        start: { type: string, format: date-time }
+        sfarsit: { type: string, format: date-time }
+        oreSolicitate: { type: number, example: 2 }
+        scop: { type: string }
+        dataCreare: { type: string, format: date-time }
+        dataCheckIn: { type: string, format: date-time, nullable: true }
+    RezervareDetaliu:
+      allOf:
+        - $ref: '#/components/schemas/Rezervare'
+        - type: object
+          properties:
+            resursa: { $ref: '#/components/schemas/Resursa' }
+            solicitant: { $ref: '#/components/schemas/Utilizator' }
+            aprobari:
+              type: array
+              items: { $ref: '#/components/schemas/Aprobare' }
+    ConflictInterval:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            intervaleLibere:
+              type: array
+              items:
+                type: object
+                properties:
+                  start: { type: string, format: date-time }
+                  sfarsit: { type: string, format: date-time }
+
+    # ── Aprobări ──
+    DecizieRequest:
+      type: object
+      properties:
+        observatie: { type: string, example: 'Aprobat, resursa e disponibilă.' }
+    Aprobare:
+      type: object
+      properties:
+        id: { type: integer, example: 55 }
+        rezervareId: { type: integer, example: 101 }
+        aprobatorId: { type: integer, example: 7 }
+        nivel: { type: integer, enum: [1, 2], example: 1, description: '1 = Coordonator Grant, 2 = Responsabil Laborator' }
+        decizie: { $ref: '#/components/schemas/Decizie' }
+        observatie: { type: string }
+        dataDecizie: { type: string, format: date-time }
+    # ── Notificări ──
+    Notificare:
+      type: object
+      properties:
+        id: { type: integer, example: 300 }
+        tip: { type: string, enum: [SchimbareStare, Memento, Mentenanta, Urgenta], example: 'Memento' }
+        mesaj: { type: string, example: 'Rezervarea pentru Braț robotic UR5 începe peste 1h.' }
+        citita: { type: boolean, example: false }
+        rezervareId: { type: integer, nullable: true, example: 101 }
+        dataCreare: { type: string, format: date-time }
+
+    # ── Rapoarte ──
+    RaportUtilizare:
+      type: object
+      properties:
+        oreRezervate: { type: number, example: 312 }
+        rataUtilizare: { type: number, format: float, example: 0.68 }
+        numarRezervari: { type: integer, example: 147 }
+        neprezentari: { type: integer, example: 9 }
+        orePeSaptamana:
+          type: array
+          items:
+            type: object
+            properties:
+              saptamana: { type: string, example: '2026-W44' }
+              ore: { type: number, example: 26 }
+        distributieLaboratoare:
+          type: array
+          items:
+            type: object
+            properties:
+              laborator: { type: string, example: 'Robotică' }
+              procent: { type: number, example: 32 }
+        topResurse:
+          type: array
+          items:
+            type: object
+            properties:
+              resursa: { type: string, example: 'Braț robotic UR5' }
+              ore: { type: number, example: 64 }

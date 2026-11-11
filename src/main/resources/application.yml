@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: rrm-backend
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/rrm_dev}
+    username: ${DB_USER:rrm}
+    password: ${DB_PASSWORD:rrm}
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Schema este gestionată exclusiv de Flyway; Hibernate doar o validează.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    locations: classpath:db/migration
+
+server:
+  port: ${PORT:8080}
+  error:
+    include-stacktrace: never
+
+rrm:
+  # Prefixul tuturor endpoint-urilor REST (vezi docs/openapi.yaml -> servers)
+  api-prefix: /api/v1
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
