@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+    "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+    "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+<!--
+  Excepții de la google_checks.xml, convenite în echipă.
+  Javadoc-ul nu este cerut automat pe fiecare membru public (DTO-uri, controllere, constructori);
+  regula echipei: Javadoc pe metodele publice din Service, verificat la code review.
+-->
+<suppressions>
+  <suppress checks="MissingJavadocMethod|MissingJavadocType" files=".*"/>
+</suppressions>
