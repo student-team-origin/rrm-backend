@@ -15,7 +15,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-/** Transformă excepțiile în răspunsuri {@link ApiError}, cu codurile HTTP din docs/openapi.yaml. */
+/**
+ * Transformă excepțiile în răspunsuri {@link ApiError}, cu codurile HTTP din
+ * api-contract/openapi.yaml.
+ */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {

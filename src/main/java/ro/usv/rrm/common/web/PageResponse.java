@@ -5,7 +5,7 @@ import java.util.function.Function;
 import org.springframework.data.domain.Page;
 
 /**
- * Răspuns paginat: metadatele {@code PageMeta} din docs/openapi.yaml + lista de elemente.
+ * Răspuns paginat: metadatele {@code PageMeta} din api-contract/openapi.yaml + lista de elemente.
  *
  * @param <T> tipul elementelor (un DTO de răspuns)
  */

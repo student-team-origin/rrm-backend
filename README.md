@@ -27,6 +27,18 @@ Funcționalități principale:
 - PostgreSQL 16 sau mai nou: [Postgres.app](https://postgresapp.com/) pe macOS, instalarea oficială pe Windows/Linux, sau Docker
 - Maven nu trebuie instalat — se folosește wrapper-ul `./mvnw` (pe Windows `mvnw.cmd`)
 
+## Clonare
+
+Contractul API este inclus ca submodul git (`api-contract/`), deci clonarea se face cu:
+```bash
+git clone --recurse-submodules https://github.com/student-team-origin/rrm-backend.git
+```
+Dacă ai clonat deja fără submodule:
+```bash
+git submodule update --init
+```
+După fiecare `git pull`, rulează și `git submodule update`.
+
 ## Pornire locală
 
 1. **Creează utilizatorul și baza de date** (o singură dată):
@@ -92,13 +104,12 @@ src/main/resources/
 ├── application.yml
 └── db/migration/        V1__schema.sql, V2__...
 config/checkstyle/       excepțiile echipei de la google_checks.xml
-docs/
-└── openapi.yaml         contractul API
+api-contract/            submodul git → rrm-api-contract (openapi.yaml)
 ```
 Fiecare modul de domeniu are straturile Controller → Service → Repository, conform diagramei de componente. Modulele se adaugă pe măsură ce sunt implementate.
 
 ## Documentație API
-Specificația OpenAPI se află în [`docs/openapi.yaml`](docs/openapi.yaml). Frontend-ul își generează tipurile TypeScript din acest fișier.
+Specificația OpenAPI se află în repository-ul separat [rrm-api-contract](https://github.com/student-team-origin/rrm-api-contract), inclus aici ca submodul la `api-contract/openapi.yaml`. Același submodul este folosit de frontend pentru a-și genera tipurile TypeScript. Contractul se modifică doar prin PR în `rrm-api-contract`.
 
 ## Contribuție
 - Fiecare modificare pornește de la un tichet Jira (`TO-<nr>`).

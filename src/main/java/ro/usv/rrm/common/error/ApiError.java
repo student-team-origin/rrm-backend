@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.Map;
 
 /**
- * Corpul răspunsurilor de eroare (schema {@code Error} din docs/openapi.yaml).
+ * Corpul răspunsurilor de eroare (schema {@code Error} din api-contract/openapi.yaml).
  *
  * @param code cod stabil, citit de frontend (ex. {@code RESURSA_INEXISTENTA})
  * @param message mesaj în română, afișabil utilizatorului

@@ -10,7 +10,15 @@ API REST pentru **Research Resource Manager**: platforma de rezervare a resursel
 Java 21 · Spring Boot 4.1 · Lombok · Maven (`./mvnw`) · Spring Security + JWT · Spring Data JPA · PostgreSQL · Flyway · JUnit 5 + Mockito
 
 ## Surse de adevăr
-- **`docs/openapi.yaml`** este contractul API. Orice endpoint nou sau modificat se actualizează **întâi** aici, apoi în cod. Frontend-ul își generează tipurile din acest fișier.
+- **`api-contract/openapi.yaml`** este contractul API. `api-contract/` este **submodulul git** [rrm-api-contract](https://github.com/student-team-origin/rrm-api-contract), comun cu frontend-ul.
+  - **Nu edita fișierul din backend.** Orice endpoint nou sau modificat se schimbă **întâi** în `rrm-api-contract`, printr-un PR separat (regulile sunt în `api-contract/CLAUDE.md`).
+  - După merge-ul acelui PR, pe ramura tichetului din backend se actualizează pointerul submodulului:
+    ```bash
+    git -C api-contract fetch && git -C api-contract switch --detach origin/main
+    git add api-contract
+    ```
+    Acesta intră în același commit cu codul care implementează modificarea.
+  - Dacă `api-contract/` e gol după clonare: `git submodule update --init`.
 - **`src/main/resources/db/migration/`** conține migrările Flyway (`V1__schema.sql` ...).
 - Diagramele de domeniu, componente și secvență sunt în Confluence. Structura codului trebuie să le urmeze.
 
@@ -40,7 +48,7 @@ Tichete existente (din PRD):
 
 ### 2. Ramuri
 - `main` este protejată: **nu face niciodată commit sau push direct pe `main`**. Totul intră prin Pull Request.
-- Înainte de o ramură nouă, actualizează `main`: `git switch main && git pull`.
+- Înainte de o ramură nouă, actualizează `main`: `git switch main && git pull && git submodule update`.
 - Format: `<tip>/TO-<nr>-<descriere-scurta-kebab>`
   - `feature/TO-4-catalog-resurse`
   - `fix/TO-5-suprapunere-buffer`
@@ -62,7 +70,7 @@ Commit-urile sunt mici și coerente. Nu include fișiere generate, `.env` sau se
 
 ### 4. Pull Request
 - Titlu: `TO-<nr> <Titlul tichetului>`, de exemplu `TO-4 Catalog logic de resurse`.
-- Descrierea conține: link-ul tichetului Jira, **ce** s-a schimbat, **cum** s-a testat și dacă s-au modificat `openapi.yaml` sau migrările.
+- Descrierea conține: link-ul tichetului Jira, **ce** s-a schimbat, **cum** s-a testat și dacă s-a actualizat submodulul `api-contract` (cu link spre PR-ul din `rrm-api-contract`) sau s-au adăugat migrări.
 - Este nevoie de minim **1 aprobare**. Comentariile se rezolvă înainte de merge.
 - Merge: **Squash and merge**, apoi ramura se șterge.
 - După merge: `git switch main && git pull`, apoi verifici că aplicația pornește.
