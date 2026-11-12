@@ -1,0 +1,21 @@
+# PostgreSQL pentru dezvoltare locală: docker compose up -d
+# Valorile se potrivesc cu cele implicite din application.yml.
+services:
+  db:
+    image: postgres:16
+    container_name: rrm-db
+    environment:
+      POSTGRES_DB: rrm_dev
+      POSTGRES_USER: rrm
+      POSTGRES_PASSWORD: rrm
+    ports:
+      - "5432:5432"
+    volumes:
+      - rrm-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rrm -d rrm_dev"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  rrm-db-data:
