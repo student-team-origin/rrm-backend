@@ -26,6 +26,11 @@ public class ApiException extends RuntimeException {
     this.code = code;
   }
 
+  /** 401 – utilizatorul nu este autentificat (credențiale greșite, token invalid sau expirat). */
+  public static ApiException unauthorized(String code, String message) {
+    return new ApiException(HttpStatus.UNAUTHORIZED, code, message);
+  }
+
   /** 404 – resursa căutată nu există (ex. id inexistent). */
   public static ApiException notFound(String code, String message) {
     return new ApiException(HttpStatus.NOT_FOUND, code, message);

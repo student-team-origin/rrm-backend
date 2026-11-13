@@ -30,22 +30,6 @@ Java 21 · Spring Boot 4.1 · Lombok · Maven (`./mvnw`) · Spring Security + JW
 - Cheia proiectului este **`TO`**. Nu începe nicio modificare de cod fără o cheie de tichet.
 - **Dacă utilizatorul nu a dat o cheie Jira, întreabă-l care este, înainte de a crea ramura.** Nu inventa chei.
 
-Tichete existente (din PRD):
-
-| Cheie | Funcționalitate |
-|---|---|
-| TO-1 | Gestiunea sesiunilor și a tokenurilor (60 min inactivitate) |
-| TO-2 | Autentificare în doi pași (2FA, dispozitiv de încredere 5 zile) |
-| TO-3 | RBAC: Student, Coordonator Grant, Responsabil Laborator, Administrator Sistem |
-| TO-4 | Catalog logic de resurse |
-| TO-5 | Motor de rezervare fără suprapuneri (hard lock + buffer time) |
-| TO-6 | Flux de aprobare configurabil |
-| TO-7 | Check-in prin interfața web și auto-anulare |
-| TO-8 | Dashboard de utilizare și grad de ocupare |
-| TO-9 | Motor de notificări (e-mail + dashboard) |
-| TO-11 | Integrare SSO universitar |
-| TO-17 | Export rapoarte audit (PDF / Excel) |
-
 ### 2. Ramuri
 - `main` este protejată: **nu face niciodată commit sau push direct pe `main`**. Totul intră prin Pull Request.
 - Înainte de o ramură nouă, actualizează `main`: `git switch main && git pull && git submodule update`.
@@ -69,8 +53,14 @@ Tipuri: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `style`. Modulul est
 Commit-urile sunt mici și coerente. Nu include fișiere generate, `.env` sau secrete.
 
 ### 4. Pull Request
-- Titlu: `TO-<nr> <Titlul tichetului>`, de exemplu `TO-4 Catalog logic de resurse`.
-- Descrierea conține: link-ul tichetului Jira, **ce** s-a schimbat, **cum** s-a testat și dacă s-a actualizat submodulul `api-contract` (cu link spre PR-ul din `rrm-api-contract`) sau s-au adăugat migrări.
+- Titlul are aceeași formă ca un commit (devine mesajul commit-ului la squash merge): `feat(resurse): TO-63 API CRUD pentru resurse`.
+- Descrierea urmează **template-ul din `.github/pull_request_template.md`** (GitHub îl completează automat la deschiderea PR-ului). Secțiunile:
+  - **Context**: cheia și titlul tichetului Jira;
+  - **Ce s-a schimbat**: listă scurtă;
+  - **Verificare**: bifele completate (`verify`, testare manuală, cazuri-limită); ce nu s-a putut verifica se spune explicit;
+  - **Contract API și bază de date**: submodul actualizat (cu link spre PR-ul din `rrm-api-contract`) și migrări noi;
+  - **Legat de**: PR-urile din alte repo-uri, dacă există.
+- Când scrii textul unui PR, completează toate secțiunile template-ului; nu adăuga secțiuni noi.
 - Este nevoie de minim **1 aprobare**. Comentariile se rezolvă înainte de merge.
 - Merge: **Squash and merge**, apoi ramura se șterge.
 - După merge: `git switch main && git pull`, apoi verifici că aplicația pornește.
