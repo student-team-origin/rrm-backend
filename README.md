@@ -77,6 +77,7 @@ Valorile implicite (din `application.yml`) se potrivesc cu pașii de mai sus. Da
 | `DB_USER` / `DB_PASSWORD` | `rrm` / `rrm` |
 | `PORT` | `8080` |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` (frontend-ul Vite) |
+| `JWT_SECRET` | o cheie de dezvoltare (minimum 32 de caractere; obligatoriu de setat în afara mediului local) |
 
 ## Baza de date
 
