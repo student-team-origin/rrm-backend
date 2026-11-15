@@ -61,9 +61,11 @@ Aplicația completă are 3 componente, pornite în ordinea: **PostgreSQL → bac
    Comanda pornește aplicația cu profilul `dev` (`application-dev.yml`), care conține secretul JWT pentru dezvoltare. **Din IntelliJ:** în configurația de rulare a `RrmBackendApplication` completează *Active profiles* cu `dev`; altfel pornirea eșuează cu `JWT_SECRET lipsește sau are mai puțin de 32 de octeți`.
 3. **Verificare:**
    ```bash
-   curl http://localhost:8080/api/v1/resource-categories
+   curl -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"andrei.popescu@student.usv.ro","parola":"parola123"}'
    ```
-   Trebuie să întoarcă 4 categorii (Echipament, Nod de calcul, Robot educațional, Spațiu de laborator).
+   Trebuie să întoarcă `twoFactorRequired: false` și `tokens.accessToken`. Toate celelalte endpoint-uri cer acest token în header-ul `Authorization: Bearer <token>`; fără el răspund cu 401. Sesiunea expiră după 60 de minute fără activitate sau la `POST /api/v1/auth/logout`.
+
+   Utilizatorii din datele de test au parola `parola123`. Fără 2FA (primesc tokenul direct): `andrei.popescu@student.usv.ro`, `stefan.rusu@student.usv.ro` (studenți), `elena.marin@usv.ro` (coordonator de grant).
 4. **Frontend-ul:** vezi [Pornire rapidă în rrm-frontend](https://github.com/student-team-origin/rrm-frontend#pornire-rapidă).
 
 Probleme frecvente:

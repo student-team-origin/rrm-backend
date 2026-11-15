@@ -11,12 +11,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import ro.usv.rrm.auth.SessionService;
 import ro.usv.rrm.common.config.RrmProperties;
 import ro.usv.rrm.common.config.SecurityConfig;
 import ro.usv.rrm.resource.dto.ResourceCategoryResponse;
 
+@WithMockUser
 @WebMvcTest(ResourceCategoryController.class)
 @Import(SecurityConfig.class)
 @EnableConfigurationProperties(RrmProperties.class)
@@ -25,6 +28,9 @@ class ResourceCategoryControllerTest {
   @Autowired private MockMvc mockMvc;
 
   @MockitoBean private ResourceCategoryService categoryService;
+
+  /** Cerut de filtrul JWT din SecurityConfig; testele folosesc @WithMockUser. */
+  @MockitoBean private SessionService sessionService;
 
   @Test
   void getResourceCategories_returns200WithContractFields() throws Exception {

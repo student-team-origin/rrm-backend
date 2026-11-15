@@ -2,11 +2,15 @@ package ro.usv.rrm.user;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -16,7 +20,7 @@ import org.hibernate.annotations.Generated;
 
 /**
  * Un utilizator al platformei (student, coordonator de grant, responsabil de laborator sau
- * administrator). Rolurile, cu scopul lor, se află în tabela {@code utilizator_rol} (TO-3).
+ * administrator). Rolurile, cu scopul lor, se află în tabela {@code utilizator_rol}.
  */
 @Entity
 @Table(name = "utilizator")
@@ -52,6 +56,11 @@ public class User {
 
   @Column(name = "activ", nullable = false)
   private boolean active = true;
+
+  /** Rolurile utilizatorului, cu scopul fiecăruia. Se modifică doar prin {@link UserRole}. */
+  @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
+  @Setter(AccessLevel.NONE)
+  private List<UserRole> roles = new ArrayList<>();
 
   /** Completat de baza de date ({@code DEFAULT now()}) la inserare. */
   @Generated
