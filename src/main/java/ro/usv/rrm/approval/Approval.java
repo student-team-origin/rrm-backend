@@ -31,6 +31,12 @@ import ro.usv.rrm.user.User;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Approval {
 
+  /** Nivelul 1: Coordonatorul grantului. */
+  public static final int COORDINATOR_LEVEL = 1;
+
+  /** Nivelul 2: Responsabilul laboratorului resursei. */
+  public static final int LABORATORY_LEVEL = 2;
+
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   @Setter(AccessLevel.NONE)

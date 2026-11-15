@@ -2,6 +2,7 @@ package ro.usv.rrm.reservation;
 
 import jakarta.persistence.criteria.Predicate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.domain.Specification;
 
@@ -28,6 +29,32 @@ final class ReservationSpecifications {
         predicates.add(cb.lessThan(root.get("start"), filter.to()));
       }
       return cb.and(predicates.toArray(Predicate[]::new));
+    };
+  }
+
+  /**
+   * Cererile care așteaptă decizia unui aprobator: nivelul 1 pe granturile date, nivelul 2 în
+   * laboratoarele date. O colecție goală nu adaugă nicio condiție.
+   */
+  static Specification<Reservation> awaitingDecision(
+      Collection<Long> grantIds, Collection<Long> laboratoryIds) {
+    return (root, query, cb) -> {
+      List<Predicate> alternatives = new ArrayList<>();
+      if (!grantIds.isEmpty()) {
+        alternatives.add(
+            cb.and(
+                cb.equal(root.get("status"), ReservationStatus.PENDING_COORDINATOR),
+                root.get("grantId").in(grantIds)));
+      }
+      if (!laboratoryIds.isEmpty()) {
+        alternatives.add(
+            cb.and(
+                cb.equal(root.get("status"), ReservationStatus.PENDING_LABORATORY),
+                root.get("resource").get("laboratory").get("id").in(laboratoryIds)));
+      }
+      return alternatives.isEmpty()
+          ? cb.disjunction()
+          : cb.or(alternatives.toArray(Predicate[]::new));
     };
   }
 }

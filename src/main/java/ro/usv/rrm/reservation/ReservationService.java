@@ -1,6 +1,12 @@
 package ro.usv.rrm.reservation;
 
 import java.time.Clock;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -60,8 +66,58 @@ public class ReservationService {
       throw ApiException.forbidden(
           "REZERVARE_INACCESIBILA", "Nu ai acces la rezervarea cu id-ul " + reservationId + ".");
     }
-    return ReservationDetailResponse.from(
-        reservation, approvalService.findByReservation(reservationId));
+    return toDetail(reservation);
+  }
+
+  /**
+   * Cererile care așteaptă o decizie: cele {@code InAsteptareCoordonator} de pe granturile date și
+   * cele {@code InAsteptareLaborator} din laboratoarele date, cele mai apropiate primele (după
+   * start).
+   *
+   * @param grantIds granturile coordonate de aprobator (nivelul 1)
+   * @param laboratoryIds laboratoarele de care răspunde aprobatorul (nivelul 2)
+   */
+  @Transactional(readOnly = true)
+  public List<ReservationDetailResponse> findAwaitingDecision(
+      Collection<Long> grantIds, Collection<Long> laboratoryIds) {
+    if (grantIds.isEmpty() && laboratoryIds.isEmpty()) {
+      return List.of();
+    }
+    return reservationRepository
+        .findAll(
+            ReservationSpecifications.awaitingDecision(grantIds, laboratoryIds),
+            Sort.by("start").and(Sort.by("id")))
+        .stream()
+        .map(this::toDetail)
+        .toList();
+  }
+
+  /** Detaliile rezervărilor cu id-urile date, în ordinea id-urilor primite. */
+  @Transactional(readOnly = true)
+  public List<ReservationDetailResponse> findDetails(List<Long> reservationIds) {
+    Map<Long, Reservation> byId =
+        reservationRepository.findAllById(reservationIds).stream()
+            .collect(Collectors.toMap(Reservation::getId, Function.identity()));
+    return reservationIds.stream()
+        .distinct()
+        .map(byId::get)
+        .filter(Objects::nonNull)
+        .map(this::toDetail)
+        .toList();
+  }
+
+  /**
+   * Citește rezervarea și îi blochează rândul până la finalul tranzacției apelantului, ca deciziile
+   * (aprobare, respingere, anulare) asupra aceleiași rezervări să nu se suprapună. Se apelează doar
+   * dintr-o metodă {@code @Transactional}.
+   *
+   * @throws ApiException 404 {@code REZERVARE_INEXISTENTA}
+   */
+  @Transactional
+  public Reservation getForUpdate(long reservationId) {
+    return reservationRepository
+        .findByIdForUpdate(reservationId)
+        .orElseThrow(() -> notFound(reservationId));
   }
 
   /**
@@ -78,10 +134,7 @@ public class ReservationService {
    */
   @Transactional
   public ReservationResponse cancel(long reservationId, long userId, String reason) {
-    Reservation reservation =
-        reservationRepository
-            .findByIdForUpdate(reservationId)
-            .orElseThrow(() -> notFound(reservationId));
+    Reservation reservation = getForUpdate(reservationId);
     if (!reservation.isRequestedBy(userId)) {
       throw ApiException.forbidden(
           "REZERVARE_ALTUI_UTILIZATOR", "Poți anula doar rezervările tale.");
@@ -111,6 +164,11 @@ public class ReservationService {
         || user.managesLaboratory(reservation.getResource().getLaboratory().getId())
         // Cine a decis deja rămâne aprobator al cererii, chiar dacă între timp și-a schimbat rolul.
         || approvalService.hasDecided(reservation.getId(), user.userId());
+  }
+
+  private ReservationDetailResponse toDetail(Reservation reservation) {
+    return ReservationDetailResponse.from(
+        reservation, approvalService.findByReservation(reservation.getId()));
   }
 
   private Reservation getReservation(long id) {

@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -84,6 +86,41 @@ class ReservationServiceTest {
     assertThat(page.page()).isZero();
     assertThat(page.size()).isEqualTo(ReservationService.MAX_PAGE_SIZE);
     assertThat(page.items()).extracting(ReservationResponse::id).containsExactly(100L);
+  }
+
+  // ───────────── findAwaitingDecision / findDetails ─────────────
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void findAwaitingDecision_noGrantsAndNoLaboratories_returnsEmptyWithoutQuery() {
+    assertThat(reservationService.findAwaitingDecision(Set.of(), Set.of())).isEmpty();
+
+    then(reservationRepository).should(never()).findAll(any(Specification.class), any(Sort.class));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void findAwaitingDecision_withScopes_returnsDetailsWithApprovals() {
+    given(reservationRepository.findAll(any(Specification.class), any(Sort.class)))
+        .willReturn(List.of(reservation));
+
+    List<ReservationDetailResponse> pending =
+        reservationService.findAwaitingDecision(Set.of(GRANT_ID), Set.of());
+
+    assertThat(pending).extracting(ReservationDetailResponse::id).containsExactly(100L);
+    then(approvalService).should().findByReservation(100L);
+  }
+
+  @Test
+  void findDetails_keepsRequestedOrderAndSkipsMissingIds() {
+    Reservation other = withId(reservationStartingAt(NOW.plus(Duration.ofDays(2))), 101L);
+    given(reservationRepository.findAllById(List.of(101L, 999L, 100L)))
+        .willReturn(List.of(reservation, other));
+
+    List<ReservationDetailResponse> details =
+        reservationService.findDetails(List.of(101L, 999L, 100L));
+
+    assertThat(details).extracting(ReservationDetailResponse::id).containsExactly(101L, 100L);
   }
 
   // ───────────── findById ─────────────
