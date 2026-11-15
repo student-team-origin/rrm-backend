@@ -42,7 +42,7 @@ public enum ReservationStatus {
     return Arrays.stream(values())
         .filter(status -> status.value.equals(value))
         .findFirst()
-        .orElseThrow(() ->
-            new IllegalArgumentException("Stare de rezervare necunoscută: " + value));
+        .orElseThrow(
+            () -> new IllegalArgumentException("Stare de rezervare necunoscută: " + value));
   }
 }

@@ -135,6 +135,20 @@ class ReservationControllerTest {
   }
 
   @Test
+  void getReservations_fromWithoutOffset_returns400WithExpectedFormat() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/v1/reservations")
+                .with(authentication(authenticated(USER)))
+                .param("from", "2026-11-16T00:00:00"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("CERERE_INVALIDA"))
+        .andExpect(jsonPath("$.fields.from").exists());
+
+    then(reservationService).should(never()).findMine(anyLong(), any(), anyInt(), anyInt());
+  }
+
+  @Test
   void getReservations_withoutToken_returns401() throws Exception {
     mockMvc.perform(get("/api/v1/reservations")).andExpect(status().isUnauthorized());
   }
@@ -228,13 +242,13 @@ class ReservationControllerTest {
   }
 
   @Test
-  void cancelReservation_afterStart_returns422() throws Exception {
+  void cancelReservation_afterStart_returns409() throws Exception {
     given(reservationService.cancel(3L, 6L, null))
-        .willThrow(ApiException.businessRule("REZERVARE_INCEPUTA", "A început deja."));
+        .willThrow(ApiException.conflict("REZERVARE_INCEPUTA", "A început deja."));
 
     mockMvc
         .perform(post("/api/v1/reservations/3/cancel").with(authentication(authenticated(USER))))
-        .andExpect(status().is(422))
+        .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("REZERVARE_INCEPUTA"));
   }
 

@@ -74,8 +74,8 @@ class ReservationServiceTest {
   @SuppressWarnings("unchecked")
   void findMine_hugePageSize_clampsToMaximum() {
     given(reservationRepository.findAll(any(Specification.class), any(Pageable.class)))
-        .willAnswer(invocation ->
-            new PageImpl<>(List.of(reservation), invocation.getArgument(1), 1));
+        .willAnswer(
+            invocation -> new PageImpl<>(List.of(reservation), invocation.getArgument(1), 1));
 
     PageResponse<ReservationResponse> page =
         reservationService.findMine(
@@ -182,38 +182,38 @@ class ReservationServiceTest {
   }
 
   @Test
-  void cancel_afterStart_throwsBusinessRule() {
+  void cancel_afterStart_throwsConflict() {
     reservation = reservationStartingAt(NOW.minus(Duration.ofMinutes(1)));
     reservation.setStatus(ReservationStatus.APPROVED);
     given(reservationRepository.findByIdForUpdate(100L)).willReturn(Optional.of(reservation));
 
     Throwable ex = catchThrowable(() -> reservationService.cancel(100L, REQUESTER_ID, null));
 
-    assertApiError(ex, HttpStatus.UNPROCESSABLE_CONTENT, "REZERVARE_INCEPUTA");
+    assertApiError(ex, HttpStatus.CONFLICT, "REZERVARE_INCEPUTA");
     assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.APPROVED);
   }
 
   @Test
-  void cancel_exactlyAtStart_throwsBusinessRule() {
+  void cancel_exactlyAtStart_throwsConflict() {
     reservation = reservationStartingAt(NOW);
     given(reservationRepository.findByIdForUpdate(100L)).willReturn(Optional.of(reservation));
 
     Throwable ex = catchThrowable(() -> reservationService.cancel(100L, REQUESTER_ID, null));
 
-    assertApiError(ex, HttpStatus.UNPROCESSABLE_CONTENT, "REZERVARE_INCEPUTA");
+    assertApiError(ex, HttpStatus.CONFLICT, "REZERVARE_INCEPUTA");
   }
 
   @ParameterizedTest
   @EnumSource(
       names = {"PENDING_COORDINATOR", "PENDING_LABORATORY", "APPROVED"},
       mode = EnumSource.Mode.EXCLUDE)
-  void cancel_nonCancellableStatus_throwsBusinessRule(ReservationStatus status) {
+  void cancel_nonCancellableStatus_throwsConflict(ReservationStatus status) {
     reservation.setStatus(status);
     given(reservationRepository.findByIdForUpdate(100L)).willReturn(Optional.of(reservation));
 
     Throwable ex = catchThrowable(() -> reservationService.cancel(100L, REQUESTER_ID, null));
 
-    assertApiError(ex, HttpStatus.UNPROCESSABLE_CONTENT, "ANULARE_NEPERMISA");
+    assertApiError(ex, HttpStatus.CONFLICT, "ANULARE_NEPERMISA");
     assertThat(reservation.getStatus()).isEqualTo(status);
   }
 

@@ -129,7 +129,7 @@ class ReservationIntegrationTest {
   }
 
   @Test
-  void cancel_afterStart_returns422() throws Exception {
+  void cancel_afterStart_returns409() throws Exception {
     entityManager.flush();
     jdbc.update("UPDATE rezervare SET start = now() - interval '1 hour' WHERE id = 3");
     entityManager.clear();
@@ -138,18 +138,18 @@ class ReservationIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/reservations/3/cancel").header(HttpHeaders.AUTHORIZATION, bearer(token)))
-        .andExpect(status().is(422))
+        .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("REZERVARE_INCEPUTA"));
   }
 
   @Test
-  void cancel_completedReservation_returns422() throws Exception {
+  void cancel_completedReservation_returns409() throws Exception {
     String token = login(STUDENT);
 
     mockMvc
         .perform(
             post("/api/v1/reservations/1/cancel").header(HttpHeaders.AUTHORIZATION, bearer(token)))
-        .andExpect(status().is(422))
+        .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("ANULARE_NEPERMISA"));
   }
 

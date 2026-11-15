@@ -79,7 +79,7 @@ public class ReservationService {
    *
    * @param reason motivul dat de solicitant, opțional; se trimite în notificare (TO-9)
    * @throws ApiException 404 {@code REZERVARE_INEXISTENTA}; 403 {@code REZERVARE_ALTUI_UTILIZATOR};
-   *     422 {@code ANULARE_NEPERMISA} sau {@code REZERVARE_INCEPUTA}
+   *     409 {@code ANULARE_NEPERMISA} sau {@code REZERVARE_INCEPUTA} (conflict cu starea curentă)
    */
   @Transactional
   public ReservationResponse cancel(long reservationId, long userId, String reason) {
@@ -92,14 +92,14 @@ public class ReservationService {
           "REZERVARE_ALTUI_UTILIZATOR", "Poți anula doar rezervările tale.");
     }
     if (!ReservationStatus.CANCELLABLE.contains(reservation.getStatus())) {
-      throw ApiException.businessRule(
+      throw ApiException.conflict(
           "ANULARE_NEPERMISA",
           "Rezervarea în starea "
               + reservation.getStatus().getValue()
               + " nu mai poate fi anulată.");
     }
     if (!clock.instant().isBefore(reservation.getStart())) {
-      throw ApiException.businessRule(
+      throw ApiException.conflict(
           "REZERVARE_INCEPUTA", "Rezervarea a început deja și nu mai poate fi anulată.");
     }
     reservation.setStatus(ReservationStatus.CANCELLED);
@@ -122,8 +122,7 @@ public class ReservationService {
                 role.rol() == Role.SYSTEM_ADMIN
                     || hasScopedRole(
                         role, Role.GRANT_COORDINATOR, ScopeType.GRANT, reservation.getGrantId())
-                    || hasScopedRole(
-                        role, Role.LAB_MANAGER, ScopeType.LABORATORY, laboratoryId));
+                    || hasScopedRole(role, Role.LAB_MANAGER, ScopeType.LABORATORY, laboratoryId));
     // Cine a decis deja rămâne aprobator al cererii, chiar dacă între timp și-a schimbat rolul.
     return isApprover || approvalService.hasDecided(reservation.getId(), userId);
   }

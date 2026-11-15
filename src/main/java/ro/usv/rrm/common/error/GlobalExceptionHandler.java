@@ -1,5 +1,6 @@
 package ro.usv.rrm.common.error;
 
+import java.time.temporal.Temporal;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +24,10 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+  static final String DATE_TIME_FORMAT_MESSAGE =
+      "Data și ora trebuie să fie în format ISO 8601, cu fus orar"
+          + " (ex. 2026-11-16T00:00:00+02:00).";
+
   @ExceptionHandler(ApiException.class)
   ResponseEntity<ApiError> handleApiException(ApiException ex) {
     return ResponseEntity.status(ex.getStatus()).body(ApiError.of(ex.getCode(), ex.getMessage()));
@@ -38,13 +43,28 @@ public class GlobalExceptionHandler {
         .body(new ApiError("DATE_INVALIDE", "Datele trimise nu sunt valide.", fields));
   }
 
-  @ExceptionHandler({
-    HttpMessageNotReadableException.class,
-    MethodArgumentTypeMismatchException.class
-  })
+  @ExceptionHandler(HttpMessageNotReadableException.class)
   ResponseEntity<ApiError> handleUnreadable(Exception ex) {
     return ResponseEntity.badRequest()
         .body(ApiError.of("CERERE_INVALIDA", "Cererea nu are un format valid."));
+  }
+
+  /**
+   * Un parametru din URL cu o valoare care nu se poate converti (ex. un id care nu e număr, o stare
+   * necunoscută). Pentru parametrii de tip dată-oră (ex. {@code from}, {@code to}), {@code fields}
+   * spune și formatul așteptat, ca frontend-ul să poată corecta cererea.
+   */
+  @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+  ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+    if (ex.getRequiredType() == null || !Temporal.class.isAssignableFrom(ex.getRequiredType())) {
+      return handleUnreadable(ex);
+    }
+    return ResponseEntity.badRequest()
+        .body(
+            new ApiError(
+                "CERERE_INVALIDA",
+                "Cererea nu are un format valid.",
+                Map.of(ex.getName(), DATE_TIME_FORMAT_MESSAGE)));
   }
 
   /**
