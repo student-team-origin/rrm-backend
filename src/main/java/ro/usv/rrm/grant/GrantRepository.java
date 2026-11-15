@@ -18,10 +18,17 @@ public interface GrantRepository extends JpaRepository<Grant, Long> {
       FROM grant_cercetare g JOIN v_sold_grant s ON s.id = g.id
       """;
 
-  /** Condiția „utilizatorul face parte din grant”: coordonator sau membru. */
+  /**
+   * Condiția „utilizatorul face parte din grant”: Coordonator al grantului sau membru.
+   * Coordonatorul se ia din rolul cu scop din {@code utilizator_rol}, aceeași sursă ca restul
+   * verificărilor RBAC ({@code AuthenticatedUser.coordinatesGrant}), nu din {@code
+   * grant_cercetare.coordonator_id}.
+   */
   String PART_OF_GRANT =
       """
-      (g.coordonator_id = :userId
+      (EXISTS (SELECT 1 FROM utilizator_rol r
+               WHERE r.utilizator_id = :userId AND r.rol = 'CoordonatorGrant'
+                 AND r.tip_scop = 'Grant' AND r.scop_id = g.id)
        OR EXISTS (SELECT 1 FROM membru_grant m WHERE m.grant_id = g.id AND m.utilizator_id = :userId))
       """;
 
@@ -34,11 +41,17 @@ public interface GrantRepository extends JpaRepository<Grant, Long> {
   @Query(value = WITH_BALANCE + " WHERE g.id = :grantId", nativeQuery = true)
   Optional<GrantBalance> findWithBalanceById(@Param("grantId") long grantId);
 
+  /**
+   * {@code true} dacă utilizatorul este membru al grantului sau dacă grantul nu există (ca
+   * verificarea drepturilor să lase Service-ul să răspundă cu 404). O singură interogare.
+   */
   @Query(
       value =
-          "SELECT EXISTS (SELECT 1 FROM grant_cercetare g WHERE g.id = :grantId AND "
-              + PART_OF_GRANT
-              + ")",
+          """
+          SELECT NOT EXISTS (SELECT 1 FROM grant_cercetare WHERE id = :grantId)
+              OR EXISTS (SELECT 1 FROM membru_grant
+                         WHERE grant_id = :grantId AND utilizator_id = :userId)
+          """,
       nativeQuery = true)
-  boolean isPartOfGrant(@Param("grantId") long grantId, @Param("userId") long userId);
+  boolean isMemberOrMissing(@Param("grantId") long grantId, @Param("userId") long userId);
 }

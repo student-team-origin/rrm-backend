@@ -34,6 +34,12 @@ public class Grant {
   @Column(name = "cod", nullable = false, unique = true, length = 40)
   private String code;
 
+  /**
+   * Coordonatorul afișat al grantului. Drepturile de coordonator (vizibilitate, aprobări) vin însă
+   * din rolul {@code CoordonatorGrant} cu scopul grantului, din {@code utilizator_rol}.
+   */
+  // TODO: tichetul de administrare a granturilor - la schimbarea coordonatorului se actualizează în
+  // aceeași tranzacție și rolul CoordonatorGrant din utilizator_rol (test pentru sincronizare).
   @Column(name = "coordonator_id", nullable = false)
   private Long coordinatorId;
 
