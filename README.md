@@ -58,6 +58,7 @@ Aplicația completă are 3 componente, pornite în ordinea: **PostgreSQL → bac
    ./mvnw spring-boot:run
    ```
    Flyway creează tabelele și încarcă datele de test la prima pornire. Pornirea s-a încheiat când în consolă apare `Started RrmBackendApplication`.
+   Comanda pornește aplicația cu profilul `dev` (`application-dev.yml`), care conține secretul JWT pentru dezvoltare. **Din IntelliJ:** în configurația de rulare a `RrmBackendApplication` completează *Active profiles* cu `dev`; altfel pornirea eșuează cu `JWT_SECRET lipsește sau are mai puțin de 32 de octeți`.
 3. **Verificare:**
    ```bash
    curl http://localhost:8080/api/v1/resource-categories
@@ -77,7 +78,7 @@ Valorile implicite (din `application.yml`) se potrivesc cu pașii de mai sus. Da
 | `DB_USER` / `DB_PASSWORD` | `rrm` / `rrm` |
 | `PORT` | `8080` |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` (frontend-ul Vite) |
-| `JWT_SECRET` | o cheie de dezvoltare (minimum 32 de caractere; obligatoriu de setat în afara mediului local) |
+| `JWT_SECRET` | **obligatoriu**, minimum 32 de caractere; doar profilul `dev` are o valoare implicită |
 
 ## Baza de date
 

@@ -3,10 +3,14 @@ package ro.usv.rrm.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -62,6 +66,20 @@ class JwtServiceTest {
   }
 
   @Test
+  void parseAccessToken_validSignatureWithoutSessionId_throwsUnauthorized() {
+    // Semnat cu cheia corectă, dar fără jti: trebuie 401, nu 500.
+    String token =
+        Jwts.builder()
+            .subject("6")
+            .claim(JwtService.TYPE_CLAIM, JwtService.ACCESS_TYPE)
+            .expiration(Date.from(NOW.plus(Duration.ofHours(1))))
+            .signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)))
+            .compact();
+
+    assertUnauthorized(() -> jwtService.parseAccessToken(token));
+  }
+
+  @Test
   void parseTwoFactorChallenge_withinFiveMinutes_returnsUserId() {
     String challenge = jwtService.issueTwoFactorChallenge(1);
     JwtService fourMinutesLater = jwtServiceAt(NOW.plus(Duration.ofMinutes(4)), SECRET);
@@ -81,7 +99,7 @@ class JwtServiceTest {
   void constructor_shortSecret_failsAtStartup() {
     assertThatThrownBy(() -> jwtServiceAt(NOW, "prea-scurt"))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("32");
+        .hasMessageContaining("JWT_SECRET");
   }
 
   private static JwtService jwtServiceAt(Instant now, String secret) {

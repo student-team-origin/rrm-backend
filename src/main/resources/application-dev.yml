@@ -1,0 +1,6 @@
+# Profilul de dezvoltare locală, activat automat de ./mvnw spring-boot:run.
+# În IntelliJ: Run configuration → Active profiles: dev.
+# NU se folosește în niciun alt mediu: secretul de mai jos este public (este în repository).
+rrm:
+  auth:
+    jwt-secret: ${JWT_SECRET:rrm-dev-secret-doar-pentru-dezvoltare-locala}

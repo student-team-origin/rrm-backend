@@ -2,7 +2,6 @@ package ro.usv.rrm.auth;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Locale;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,11 +47,11 @@ public class AuthService {
    */
   @Transactional
   public LoginResponse login(LoginRequest request) {
-    String email = request.email().trim().toLowerCase(Locale.ROOT);
-    User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
+    User user = userRepository.findByEmail(User.normalizeEmail(request.email())).orElse(null);
     String hash = user != null ? user.getPasswordHash() : DUMMY_PASSWORD_HASH;
     if (!passwordEncoder.matches(request.parola(), hash) || user == null) {
-      log.info("Autentificare eșuată pentru {}", email);
+      // Fără e-mailul introdus: ar fi date personale în loguri și text controlat de atacator.
+      log.info("Autentificare eșuată (utilizator {})", user != null ? user.getId() : "necunoscut");
       throw ApiException.unauthorized("CREDENTIALE_INVALIDE", "E-mail sau parolă incorecte.");
     }
     if (!user.isActive()) {
@@ -60,7 +59,8 @@ public class AuthService {
           "CONT_DEZACTIVAT", "Contul este dezactivat. Contactează administratorul.");
     }
 
-    // TODO: TO-32 - fără provocare 2FA dacă request.deviceToken() este un dispozitiv de încredere.
+    // TODO: TO-32 - fără provocare 2FA dacă request.deviceToken() este un dispozitiv de încredere;
+    // provocarea trebuie să poată fi folosită o singură dată (acum e valabilă 5 minute).
     if (user.isTwoFactorEnabled()) {
       return LoginResponse.twoFactorChallenge(jwtService.issueTwoFactorChallenge(user.getId()));
     }

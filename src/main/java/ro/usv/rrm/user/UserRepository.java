@@ -5,5 +5,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface UserRepository extends JpaRepository<User, Long> {
 
-  Optional<User> findByEmailIgnoreCase(String email);
+  /** Caută după e-mailul deja normalizat cu {@link User#normalizeEmail}. */
+  Optional<User> findByEmail(String email);
 }

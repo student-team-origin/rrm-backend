@@ -40,7 +40,7 @@ class FlywayMigrationsTest {
             "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
             String.class);
 
-    assertThat(versions).contains("1", "2");
+    assertThat(versions).contains("1", "2", "3");
   }
 
   @Test
@@ -48,6 +48,20 @@ class FlywayMigrationsTest {
     assertThat(count("resursa")).isPositive();
     assertThat(count("laborator")).isPositive();
     assertThat(count("categorie_resursa")).isPositive();
+  }
+
+  @Test
+  void insertUser_emailWithUppercase_isRejected() {
+    // V3: e-mailul se păstrează doar cu litere mici, deci UNIQUE (email) nu ține cont de
+    // majuscule și „Ana.Rusu@usv.ro” nu poate coexista cu „ana.rusu@usv.ro”.
+    assertThatThrownBy(() ->
+            jdbc.update(
+                "INSERT INTO utilizator (nume, email, parola_hash) VALUES (?, ?, ?)",
+                "Duplicat",
+                "Ana.Rusu@usv.ro",
+                "x"))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("utilizator_email_normalizat");
   }
 
   @Test

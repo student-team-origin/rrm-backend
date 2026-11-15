@@ -72,7 +72,7 @@ class AuthServiceTest {
 
   @Test
   void login_correctPassword_savesSessionAndReturnsToken() {
-    given(userRepository.findByEmailIgnoreCase(EMAIL)).willReturn(Optional.of(user));
+    given(userRepository.findByEmail(EMAIL)).willReturn(Optional.of(user));
     given(jwtService.issueAccessToken(eq(6L), any()))
         .willReturn(new IssuedToken("jwt", Duration.ofHours(8)));
 
@@ -95,7 +95,7 @@ class AuthServiceTest {
 
   @Test
   void login_emailWithDifferentCaseAndSpaces_findsUser() {
-    given(userRepository.findByEmailIgnoreCase(EMAIL)).willReturn(Optional.of(user));
+    given(userRepository.findByEmail(EMAIL)).willReturn(Optional.of(user));
     given(jwtService.issueAccessToken(eq(6L), any()))
         .willReturn(new IssuedToken("jwt", Duration.ofHours(8)));
 
@@ -107,7 +107,7 @@ class AuthServiceTest {
 
   @Test
   void login_wrongPassword_throwsUnauthorizedWithoutSession() {
-    given(userRepository.findByEmailIgnoreCase(EMAIL)).willReturn(Optional.of(user));
+    given(userRepository.findByEmail(EMAIL)).willReturn(Optional.of(user));
 
     assertUnauthorized(
         () -> authService.login(new LoginRequest(EMAIL, "gresita", null)), "CREDENTIALE_INVALIDE");
@@ -116,7 +116,7 @@ class AuthServiceTest {
 
   @Test
   void login_unknownEmail_throwsSameErrorAsWrongPassword() {
-    given(userRepository.findByEmailIgnoreCase("nimeni@usv.ro")).willReturn(Optional.empty());
+    given(userRepository.findByEmail("nimeni@usv.ro")).willReturn(Optional.empty());
 
     assertUnauthorized(
         () -> authService.login(new LoginRequest("nimeni@usv.ro", PASSWORD, null)),
@@ -127,7 +127,7 @@ class AuthServiceTest {
   @Test
   void login_inactiveAccount_throwsUnauthorized() {
     user.setActive(false);
-    given(userRepository.findByEmailIgnoreCase(EMAIL)).willReturn(Optional.of(user));
+    given(userRepository.findByEmail(EMAIL)).willReturn(Optional.of(user));
 
     assertUnauthorized(
         () -> authService.login(new LoginRequest(EMAIL, PASSWORD, null)), "CONT_DEZACTIVAT");
@@ -137,7 +137,7 @@ class AuthServiceTest {
   @Test
   void login_twoFactorEnabled_returnsChallengeWithoutSessionOrToken() {
     user.setTwoFactorEnabled(true);
-    given(userRepository.findByEmailIgnoreCase(EMAIL)).willReturn(Optional.of(user));
+    given(userRepository.findByEmail(EMAIL)).willReturn(Optional.of(user));
     given(jwtService.issueTwoFactorChallenge(6L)).willReturn("challenge");
 
     LoginResponse response = authService.login(new LoginRequest(EMAIL, PASSWORD, null));
@@ -152,7 +152,7 @@ class AuthServiceTest {
   @Test
   void login_twoFactorEnabledAndWrongPassword_throwsUnauthorizedWithoutChallenge() {
     user.setTwoFactorEnabled(true);
-    given(userRepository.findByEmailIgnoreCase(EMAIL)).willReturn(Optional.of(user));
+    given(userRepository.findByEmail(EMAIL)).willReturn(Optional.of(user));
 
     assertUnauthorized(
         () -> authService.login(new LoginRequest(EMAIL, "gresita", null)), "CREDENTIALE_INVALIDE");

@@ -3,6 +3,7 @@ package ro.usv.rrm.auth;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -10,6 +11,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
+import java.util.function.Function;
 import javax.crypto.SecretKey;
 import org.springframework.stereotype.Service;
 import ro.usv.rrm.common.config.RrmProperties;
@@ -44,7 +46,8 @@ public class JwtService {
     byte[] secret = properties.auth().jwtSecret().getBytes(StandardCharsets.UTF_8);
     if (secret.length < MIN_SECRET_BYTES) {
       throw new IllegalStateException(
-          "rrm.auth.jwt-secret (JWT_SECRET) trebuie să aibă minimum 32 de octeți.");
+          "JWT_SECRET lipsește sau are mai puțin de 32 de octeți. "
+              + "Local, pornește cu profilul dev.");
     }
     this.key = Keys.hmacShaKeyFor(secret);
     this.accessTokenTtl = properties.auth().accessTokenTtl();
@@ -86,9 +89,13 @@ public class JwtService {
    * @throws ApiException 401 {@code TOKEN_INVALID} dacă tokenul nu este valid
    */
   public AccessTokenClaims parseAccessToken(String token) {
-    Claims claims = parse(token, ACCESS_TYPE);
-    return new AccessTokenClaims(
-        Long.parseLong(claims.getSubject()), UUID.fromString(claims.getId()));
+    return parse(
+        token,
+        ACCESS_TYPE,
+        claims ->
+            new AccessTokenClaims(
+                Long.parseLong(required(claims.getSubject())),
+                UUID.fromString(required(claims.getId()))));
   }
 
   /**
@@ -97,10 +104,15 @@ public class JwtService {
    * @throws ApiException 401 {@code TOKEN_INVALID} dacă provocarea nu este validă sau a expirat
    */
   public long parseTwoFactorChallenge(String challengeId) {
-    return Long.parseLong(parse(challengeId, TWO_FACTOR_TYPE).getSubject());
+    return parse(
+        challengeId, TWO_FACTOR_TYPE, claims -> Long.parseLong(required(claims.getSubject())));
   }
 
-  private Claims parse(String token, String expectedType) {
+  /**
+   * Verifică tokenul și extrage datele din el. Orice problemă, inclusiv un claim lipsă sau cu
+   * format greșit într-un token cu semnătură validă, devine 401, nu 500.
+   */
+  private <T> T parse(String token, String expectedType, Function<Claims, T> extractor) {
     try {
       Claims claims =
           Jwts.parser()
@@ -112,11 +124,18 @@ public class JwtService {
       if (!expectedType.equals(claims.get(TYPE_CLAIM, String.class))) {
         throw new JwtException("Tip de token neașteptat.");
       }
-      return claims;
+      return extractor.apply(claims);
     } catch (JwtException | IllegalArgumentException e) {
       throw ApiException.unauthorized(
           "TOKEN_INVALID", "Sesiunea nu este validă sau a expirat. Autentifică-te din nou.");
     }
+  }
+
+  private static String required(String claim) {
+    if (claim == null) {
+      throw new MalformedJwtException("Claim obligatoriu lipsă.");
+    }
+    return claim;
   }
 
   /**

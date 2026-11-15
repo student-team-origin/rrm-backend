@@ -93,4 +93,18 @@ class AuthControllerTest {
         .andExpect(jsonPath("$.fields.parola").value("Parola este obligatorie."));
     then(authService).should(never()).login(any());
   }
+
+  @Test
+  void login_passwordLongerThan72Characters_returns400() throws Exception {
+    String body =
+        "{\"email\": \"andrei.popescu@student.usv.ro\", \"parola\": \"%s\"}"
+            .formatted("a".repeat(73));
+
+    mockMvc
+        .perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(
+            jsonPath("$.fields.parola").value("Parola poate avea cel mult 72 de caractere."));
+    then(authService).should(never()).login(any());
+  }
 }
