@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import java.time.OffsetDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -15,6 +16,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 class GlobalExceptionHandlerTest {
@@ -66,6 +68,25 @@ class GlobalExceptionHandlerTest {
         .andExpect(jsonPath("$.code").value("CERERE_INVALIDA"));
   }
 
+  @Test
+  void dateTimeParamWithoutOffset_returns400WithExpectedFormat() throws Exception {
+    mockMvc
+        .perform(get("/date-time").param("from", "2026-11-16T00:00:00"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("CERERE_INVALIDA"))
+        .andExpect(
+            jsonPath("$.fields.from").value(GlobalExceptionHandler.DATE_TIME_FORMAT_MESSAGE));
+  }
+
+  @Test
+  void nonDateParamWithWrongType_returns400WithoutFields() throws Exception {
+    mockMvc
+        .perform(get("/number").param("id", "abc"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("CERERE_INVALIDA"))
+        .andExpect(jsonPath("$.fields").doesNotExist());
+  }
+
   record TestRequest(@NotBlank String name) {}
 
   @RestController
@@ -88,5 +109,11 @@ class GlobalExceptionHandlerTest {
 
     @PostMapping("/validate")
     void validate(@Valid @RequestBody TestRequest request) {}
+
+    @GetMapping("/date-time")
+    void dateTime(@RequestParam OffsetDateTime from) {}
+
+    @GetMapping("/number")
+    void number(@RequestParam Long id) {}
   }
 }

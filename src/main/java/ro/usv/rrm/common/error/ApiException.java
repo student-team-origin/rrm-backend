@@ -31,6 +31,11 @@ public class ApiException extends RuntimeException {
     return new ApiException(HttpStatus.UNAUTHORIZED, code, message);
   }
 
+  /** 403 – utilizatorul este autentificat, dar nu are dreptul la operație sau la date. */
+  public static ApiException forbidden(String code, String message) {
+    return new ApiException(HttpStatus.FORBIDDEN, code, message);
+  }
+
   /** 404 – resursa căutată nu există (ex. id inexistent). */
   public static ApiException notFound(String code, String message) {
     return new ApiException(HttpStatus.NOT_FOUND, code, message);
