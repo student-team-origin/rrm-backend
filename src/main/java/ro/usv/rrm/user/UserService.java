@@ -43,9 +43,18 @@ public class UserService {
    */
   @Transactional(readOnly = true)
   public UserResponse findById(long id) {
+    return UserResponse.from(getUser(id));
+  }
+
+  /**
+   * Entitatea utilizatorului, pentru asocierile din alte module (ex. aprobatorul unei decizii).
+   *
+   * @throws ApiException 404 {@code UTILIZATOR_INEXISTENT} dacă utilizatorul nu există
+   */
+  @Transactional(readOnly = true)
+  public User getUser(long id) {
     return userRepository
         .findById(id)
-        .map(UserResponse::from)
         .orElseThrow(() ->
             ApiException.notFound(
                 "UTILIZATOR_INEXISTENT", "Utilizatorul cu id-ul " + id + " nu există."));
