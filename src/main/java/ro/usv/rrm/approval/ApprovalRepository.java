@@ -1,5 +1,6 @@
 package ro.usv.rrm.approval;
 
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -9,6 +10,9 @@ public interface ApprovalRepository extends JpaRepository<Approval, Long> {
 
   /** Istoricul aprobărilor unei rezervări, în ordinea nivelurilor. */
   List<Approval> findByReservationIdOrderByLevelAsc(Long reservationId);
+
+  /** Aprobările mai multor rezervări, în ordinea nivelurilor. */
+  List<Approval> findByReservationIdInOrderByLevelAsc(Collection<Long> reservationIds);
 
   /** {@code true} dacă utilizatorul a luat deja o decizie asupra rezervării. */
   boolean existsByReservationIdAndApproverId(Long reservationId, Long approverId);

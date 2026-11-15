@@ -123,11 +123,53 @@ class ApprovalIntegrationTest {
         .perform(
             post("/api/v1/approvals/4/approve").header(HttpHeaders.AUTHORIZATION, bearer(student)))
         .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.code").value("FARA_DREPT_APROBARE"));
+        .andExpect(jsonPath("$.code").value("ACCES_INTERZIS"));
     mockMvc
         .perform(get("/api/v1/approvals").header(HttpHeaders.AUTHORIZATION, bearer(student)))
         .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.code").value("FARA_ROL_APROBATOR"));
+        .andExpect(jsonPath("$.code").value("ACCES_INTERZIS"));
+    assertThat(statusOf(4)).isEqualTo("InAsteptareCoordonator");
+  }
+
+  @Test
+  void approve_ownRequest_returns403() throws Exception {
+    entityManager.flush();
+    Long ownReservation =
+        jdbc.queryForObject(
+            "INSERT INTO rezervare (solicitant_id, resursa_id, grant_id, start, sfarsit,"
+                + " ore_solicitate, scop)"
+                + " VALUES (5, 4, 2, date_trunc('day', now()) + interval '5 days 9 hours',"
+                + " date_trunc('day', now()) + interval '5 days 10 hours', 1.0, 'Cerere proprie')"
+                + " RETURNING id",
+            Long.class);
+    String coordinator = login(COORDINATOR_GRANT_2);
+
+    mockMvc
+        .perform(
+            post("/api/v1/approvals/" + ownReservation + "/approve")
+                .header(HttpHeaders.AUTHORIZATION, bearer(coordinator)))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("AUTO_APROBARE_INTERZISA"));
+    assertThat(statusOf(ownReservation)).isEqualTo("InAsteptareCoordonator");
+  }
+
+  @Test
+  void approve_afterStart_returns409AndIsNotListed() throws Exception {
+    entityManager.flush();
+    jdbc.update("UPDATE rezervare SET start = now() - interval '3 hours' WHERE id = 4");
+    entityManager.clear();
+    String coordinator = login(COORDINATOR_GRANT_2);
+
+    mockMvc
+        .perform(get("/api/v1/approvals").header(HttpHeaders.AUTHORIZATION, bearer(coordinator)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$").isEmpty());
+    mockMvc
+        .perform(
+            post("/api/v1/approvals/4/approve")
+                .header(HttpHeaders.AUTHORIZATION, bearer(coordinator)))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REZERVARE_INCEPUTA"));
     assertThat(statusOf(4)).isEqualTo("InAsteptareCoordonator");
   }
 

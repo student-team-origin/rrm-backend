@@ -12,8 +12,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ro.usv.rrm.approval.ApprovalService;
+import ro.usv.rrm.approval.dto.ApprovalResponse;
 import ro.usv.rrm.auth.AuthenticatedUser;
 import ro.usv.rrm.common.error.ApiException;
 import ro.usv.rrm.common.web.PageResponse;
@@ -72,7 +74,7 @@ public class ReservationService {
   /**
    * Cererile care așteaptă o decizie: cele {@code InAsteptareCoordonator} de pe granturile date și
    * cele {@code InAsteptareLaborator} din laboratoarele date, cele mai apropiate primele (după
-   * start).
+   * start). Cererile al căror start a trecut nu mai apar: nu mai pot fi aprobate.
    *
    * @param grantIds granturile coordonate de aprobator (nivelul 1)
    * @param laboratoryIds laboratoarele de care răspunde aprobatorul (nivelul 2)
@@ -83,37 +85,30 @@ public class ReservationService {
     if (grantIds.isEmpty() && laboratoryIds.isEmpty()) {
       return List.of();
     }
-    return reservationRepository
-        .findAll(
-            ReservationSpecifications.awaitingDecision(grantIds, laboratoryIds),
-            Sort.by("start").and(Sort.by("id")))
-        .stream()
-        .map(this::toDetail)
-        .toList();
+    return toDetails(
+        reservationRepository.findAll(
+            ReservationSpecifications.awaitingDecision(grantIds, laboratoryIds, clock.instant()),
+            Sort.by("start").and(Sort.by("id"))));
   }
 
   /** Detaliile rezervărilor cu id-urile date, în ordinea id-urilor primite. */
   @Transactional(readOnly = true)
   public List<ReservationDetailResponse> findDetails(List<Long> reservationIds) {
     Map<Long, Reservation> byId =
-        reservationRepository.findAllById(reservationIds).stream()
+        reservationRepository.findWithDetailsByIdIn(reservationIds).stream()
             .collect(Collectors.toMap(Reservation::getId, Function.identity()));
-    return reservationIds.stream()
-        .distinct()
-        .map(byId::get)
-        .filter(Objects::nonNull)
-        .map(this::toDetail)
-        .toList();
+    return toDetails(
+        reservationIds.stream().distinct().map(byId::get).filter(Objects::nonNull).toList());
   }
 
   /**
    * Citește rezervarea și îi blochează rândul până la finalul tranzacției apelantului, ca deciziile
-   * (aprobare, respingere, anulare) asupra aceleiași rezervări să nu se suprapună. Se apelează doar
-   * dintr-o metodă {@code @Transactional}.
+   * (aprobare, respingere, anulare) asupra aceleiași rezervări să nu se suprapună. Cere o
+   * tranzacție deja pornită ({@code MANDATORY}): fără ea, blocarea s-ar elibera imediat.
    *
    * @throws ApiException 404 {@code REZERVARE_INEXISTENTA}
    */
-  @Transactional
+  @Transactional(propagation = Propagation.MANDATORY)
   public Reservation getForUpdate(long reservationId) {
     return reservationRepository
         .findByIdForUpdate(reservationId)
@@ -169,6 +164,17 @@ public class ReservationService {
   private ReservationDetailResponse toDetail(Reservation reservation) {
     return ReservationDetailResponse.from(
         reservation, approvalService.findByReservation(reservation.getId()));
+  }
+
+  /** Detaliile unei liste: aprobările tuturor rezervărilor se citesc într-o singură interogare. */
+  private List<ReservationDetailResponse> toDetails(List<Reservation> reservations) {
+    Map<Long, List<ApprovalResponse>> approvals =
+        approvalService.findByReservations(reservations.stream().map(Reservation::getId).toList());
+    return reservations.stream()
+        .map(reservation ->
+            ReservationDetailResponse.from(
+                reservation, approvals.getOrDefault(reservation.getId(), List.of())))
+        .toList();
   }
 
   private Reservation getReservation(long id) {

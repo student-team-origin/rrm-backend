@@ -1,6 +1,7 @@
 package ro.usv.rrm.reservation;
 
 import jakarta.persistence.criteria.Predicate;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -34,10 +35,11 @@ final class ReservationSpecifications {
 
   /**
    * Cererile care așteaptă decizia unui aprobator: nivelul 1 pe granturile date, nivelul 2 în
-   * laboratoarele date. O colecție goală nu adaugă nicio condiție.
+   * laboratoarele date, doar cele care încep după {@code now}. O colecție goală nu adaugă nicio
+   * condiție.
    */
   static Specification<Reservation> awaitingDecision(
-      Collection<Long> grantIds, Collection<Long> laboratoryIds) {
+      Collection<Long> grantIds, Collection<Long> laboratoryIds, Instant now) {
     return (root, query, cb) -> {
       List<Predicate> alternatives = new ArrayList<>();
       if (!grantIds.isEmpty()) {
@@ -54,7 +56,9 @@ final class ReservationSpecifications {
       }
       return alternatives.isEmpty()
           ? cb.disjunction()
-          : cb.or(alternatives.toArray(Predicate[]::new));
+          : cb.and(
+              cb.greaterThan(root.get("start"), now),
+              cb.or(alternatives.toArray(Predicate[]::new)));
     };
   }
 }

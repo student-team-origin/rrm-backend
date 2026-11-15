@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -104,23 +105,31 @@ class ReservationServiceTest {
     given(reservationRepository.findAll(any(Specification.class), any(Sort.class)))
         .willReturn(List.of(reservation));
 
+    ApprovalResponse approval =
+        new ApprovalResponse(
+            1L, 100L, 4L, 1, ApprovalDecision.APPROVED, null, NOW.minus(Duration.ofHours(1)));
+    given(approvalService.findByReservations(List.of(100L)))
+        .willReturn(Map.of(100L, List.of(approval)));
+
     List<ReservationDetailResponse> pending =
         reservationService.findAwaitingDecision(Set.of(GRANT_ID), Set.of());
 
     assertThat(pending).extracting(ReservationDetailResponse::id).containsExactly(100L);
-    then(approvalService).should().findByReservation(100L);
+    assertThat(pending.getFirst().aprobari()).containsExactly(approval);
   }
 
   @Test
   void findDetails_keepsRequestedOrderAndSkipsMissingIds() {
     Reservation other = withId(reservationStartingAt(NOW.plus(Duration.ofDays(2))), 101L);
-    given(reservationRepository.findAllById(List.of(101L, 999L, 100L)))
+    given(reservationRepository.findWithDetailsByIdIn(List.of(101L, 999L, 100L)))
         .willReturn(List.of(reservation, other));
+    given(approvalService.findByReservations(List.of(101L, 100L))).willReturn(Map.of());
 
     List<ReservationDetailResponse> details =
         reservationService.findDetails(List.of(101L, 999L, 100L));
 
     assertThat(details).extracting(ReservationDetailResponse::id).containsExactly(101L, 100L);
+    assertThat(details).allSatisfy(detail -> assertThat(detail.aprobari()).isEmpty());
   }
 
   // ───────────── findById ─────────────

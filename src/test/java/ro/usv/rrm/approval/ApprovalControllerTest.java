@@ -26,6 +26,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import ro.usv.rrm.approval.dto.ApprovalResponse;
 import ro.usv.rrm.auth.AuthenticatedUser;
+import ro.usv.rrm.auth.ScopedRole;
 import ro.usv.rrm.auth.SessionService;
 import ro.usv.rrm.common.config.RrmProperties;
 import ro.usv.rrm.common.config.SecurityConfig;
@@ -45,8 +46,15 @@ import ro.usv.rrm.user.dto.UserRoleResponse;
 @EnableConfigurationProperties(RrmProperties.class)
 class ApprovalControllerTest {
 
+  private static final UUID SESSION_ID = UUID.fromString("5f0c6b9e-6f3a-4c55-9d43-1d2f1f9f2a10");
+
   private static final AuthenticatedUser COORDINATOR =
-      new AuthenticatedUser(5, UUID.fromString("5f0c6b9e-6f3a-4c55-9d43-1d2f1f9f2a10"));
+      new AuthenticatedUser(
+          5, SESSION_ID, List.of(new ScopedRole(Role.GRANT_COORDINATOR, ScopeType.GRANT, 2L)));
+
+  private static final AuthenticatedUser STUDENT =
+      new AuthenticatedUser(
+          6, SESSION_ID, List.of(new ScopedRole(Role.STUDENT, ScopeType.GLOBAL, null)));
 
   private static final Instant DECIDED_AT = Instant.parse("2026-11-15T19:00:00Z");
 
@@ -61,7 +69,7 @@ class ApprovalControllerTest {
 
   @Test
   void getApprovals_withoutStatus_returnsPendingRequests() throws Exception {
-    given(approvalFlowService.findForApprover(5L, ApprovalListStatus.PENDING))
+    given(approvalFlowService.findForApprover(COORDINATOR, ApprovalListStatus.PENDING))
         .willReturn(List.of(pendingReservation()));
 
     mockMvc
@@ -76,7 +84,7 @@ class ApprovalControllerTest {
 
   @Test
   void getApprovals_rejected_passesFilter() throws Exception {
-    given(approvalFlowService.findForApprover(5L, ApprovalListStatus.REJECTED))
+    given(approvalFlowService.findForApprover(COORDINATOR, ApprovalListStatus.REJECTED))
         .willReturn(List.of());
 
     mockMvc
@@ -97,18 +105,17 @@ class ApprovalControllerTest {
                 .param("stare", "Aprobata"))
         .andExpect(status().isBadRequest());
 
-    then(approvalFlowService).should(never()).findForApprover(anyLong(), any());
+    then(approvalFlowService).should(never()).findForApprover(any(), any());
   }
 
   @Test
-  void getApprovals_userWithoutApproverRole_returns403() throws Exception {
-    given(approvalFlowService.findForApprover(5L, ApprovalListStatus.PENDING))
-        .willThrow(ApiException.forbidden("FARA_ROL_APROBATOR", "Doar aprobatorii."));
-
+  void getApprovals_student_returns403WithoutCallingService() throws Exception {
     mockMvc
-        .perform(get("/api/v1/approvals").with(authentication(authenticated(COORDINATOR))))
+        .perform(get("/api/v1/approvals").with(authentication(authenticated(STUDENT))))
         .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.code").value("FARA_ROL_APROBATOR"));
+        .andExpect(jsonPath("$.code").value("ACCES_INTERZIS"));
+
+    then(approvalFlowService).should(never()).findForApprover(any(), any());
   }
 
   @Test
@@ -120,7 +127,7 @@ class ApprovalControllerTest {
 
   @Test
   void approve_withObservation_returnsDecision() throws Exception {
-    given(approvalFlowService.approve(4L, 5L, "Încadrat în buget"))
+    given(approvalFlowService.approve(4L, COORDINATOR, "Încadrat în buget"))
         .willReturn(decision(ApprovalDecision.APPROVED, "Încadrat în buget"));
 
     mockMvc
@@ -143,7 +150,7 @@ class ApprovalControllerTest {
 
   @Test
   void approve_withoutBody_approvesWithoutObservation() throws Exception {
-    given(approvalFlowService.approve(4L, 5L, null))
+    given(approvalFlowService.approve(4L, COORDINATOR, null))
         .willReturn(decision(ApprovalDecision.APPROVED, null));
 
     mockMvc
@@ -164,12 +171,39 @@ class ApprovalControllerTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.fields.observatie").exists());
 
-    then(approvalFlowService).should(never()).approve(anyLong(), anyLong(), any());
+    then(approvalFlowService).should(never()).approve(anyLong(), any(), any());
+  }
+
+  @Test
+  void approve_student_returns403WithoutCallingService() throws Exception {
+    mockMvc
+        .perform(post("/api/v1/approvals/4/approve").with(authentication(authenticated(STUDENT))))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("ACCES_INTERZIS"));
+
+    then(approvalFlowService).should(never()).approve(anyLong(), any(), any());
+  }
+
+  @Test
+  void reject_student_returns403WithoutCallingService() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/approvals/4/reject")
+                .with(authentication(authenticated(STUDENT)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"observatie": "Motiv"}
+                    """))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("ACCES_INTERZIS"));
+
+    then(approvalFlowService).should(never()).reject(anyLong(), any(), any());
   }
 
   @Test
   void approve_wrongApprover_returns403() throws Exception {
-    given(approvalFlowService.approve(4L, 5L, null))
+    given(approvalFlowService.approve(4L, COORDINATOR, null))
         .willThrow(ApiException.forbidden("FARA_DREPT_APROBARE", "Nu poți decide."));
 
     mockMvc
@@ -181,7 +215,7 @@ class ApprovalControllerTest {
 
   @Test
   void approve_notAwaitingDecision_returns409() throws Exception {
-    given(approvalFlowService.approve(4L, 5L, null))
+    given(approvalFlowService.approve(4L, COORDINATOR, null))
         .willThrow(ApiException.conflict("CERERE_FARA_DECIZIE_IN_ASTEPTARE", "Nu mai așteaptă."));
 
     mockMvc
@@ -193,7 +227,7 @@ class ApprovalControllerTest {
 
   @Test
   void approve_unknownReservation_returns404() throws Exception {
-    given(approvalFlowService.approve(999L, 5L, null))
+    given(approvalFlowService.approve(999L, COORDINATOR, null))
         .willThrow(ApiException.notFound("REZERVARE_INEXISTENTA", "Nu există."));
 
     mockMvc
@@ -207,7 +241,7 @@ class ApprovalControllerTest {
 
   @Test
   void reject_withReason_returnsDecision() throws Exception {
-    given(approvalFlowService.reject(4L, 5L, "Nu ține de grant"))
+    given(approvalFlowService.reject(4L, COORDINATOR, "Nu ține de grant"))
         .willReturn(decision(ApprovalDecision.REJECTED, "Nu ține de grant"));
 
     mockMvc
@@ -238,7 +272,7 @@ class ApprovalControllerTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.fields.observatie").value("Motivul respingerii este obligatoriu."));
 
-    then(approvalFlowService).should(never()).reject(anyLong(), anyLong(), any());
+    then(approvalFlowService).should(never()).reject(anyLong(), any(), any());
   }
 
   @Test
@@ -248,7 +282,7 @@ class ApprovalControllerTest {
             post("/api/v1/approvals/4/reject").with(authentication(authenticated(COORDINATOR))))
         .andExpect(status().isBadRequest());
 
-    then(approvalFlowService).should(never()).reject(anyLong(), anyLong(), any());
+    then(approvalFlowService).should(never()).reject(anyLong(), any(), any());
   }
 
   // ───────────── date de test ─────────────
@@ -291,6 +325,6 @@ class ApprovalControllerTest {
   }
 
   private static UsernamePasswordAuthenticationToken authenticated(AuthenticatedUser user) {
-    return new UsernamePasswordAuthenticationToken(user, null, List.of());
+    return new UsernamePasswordAuthenticationToken(user, null, user.authorities());
   }
 }
