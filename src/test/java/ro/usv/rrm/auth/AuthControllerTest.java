@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -177,6 +178,49 @@ class AuthControllerTest {
                 .content(LOGIN_JSON))
         .andExpect(status().isOk());
     then(sessionService).should(never()).authenticate(any());
+  }
+
+  @Test
+  void me_lowercaseBearerScheme_isAccepted() throws Exception {
+    given(sessionService.authenticate("tok")).willReturn(USER);
+    given(userService.findById(6))
+        .willReturn(new UserResponse(6L, "Andrei Popescu", "a@usv.ro", true, false, List.of()));
+
+    mockMvc
+        .perform(get("/api/v1/auth/me").header("Authorization", "bearer tok"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(6));
+  }
+
+  @Test
+  void protectedEndpoint_withoutToken_hasWwwAuthenticateBearer() throws Exception {
+    mockMvc
+        .perform(get("/api/v1/auth/me"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(header().string("WWW-Authenticate", "Bearer"));
+  }
+
+  @Test
+  void protectedEndpoint_rejectedToken_hasInvalidTokenError() throws Exception {
+    given(sessionService.authenticate("expirat"))
+        .willThrow(ApiException.unauthorized("SESIUNE_EXPIRATA", "Sesiunea a expirat."));
+
+    mockMvc
+        .perform(get("/api/v1/auth/me").header("Authorization", "Bearer expirat"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("SESIUNE_EXPIRATA"))
+        .andExpect(header().string("WWW-Authenticate", "Bearer error=\"invalid_token\""));
+  }
+
+  @Test
+  void protectedEndpoint_unexpectedErrorWhileCheckingSession_returns500InCommonFormat()
+      throws Exception {
+    given(sessionService.authenticate("tok")).willThrow(new IllegalStateException("DB căzută"));
+
+    mockMvc
+        .perform(get("/api/v1/auth/me").header("Authorization", "Bearer tok"))
+        .andExpect(status().isInternalServerError())
+        .andExpect(jsonPath("$.code").value("EROARE_INTERNA"));
   }
 
   private static UsernamePasswordAuthenticationToken authenticated(AuthenticatedUser user) {

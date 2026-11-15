@@ -7,7 +7,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.util.matcher.RequestMatcher;
@@ -28,6 +30,7 @@ import ro.usv.rrm.common.error.ApiException;
  * <p>Nu este bean Spring: se creează în {@code SecurityConfig}, ca să ruleze doar o dată, în lanțul
  * de securitate, nu și ca filtru servlet separat.
  */
+@Slf4j
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
@@ -52,7 +55,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       HttpServletRequest request, HttpServletResponse response, FilterChain chain)
       throws ServletException, IOException {
     String header = request.getHeader(HttpHeaders.AUTHORIZATION);
-    if (header == null || !header.startsWith(BEARER_PREFIX)) {
+    // Schema „Bearer” nu depinde de literele mari sau mici (RFC 6750).
+    if (header == null
+        || !header.regionMatches(true, 0, BEARER_PREFIX, 0, BEARER_PREFIX.length())) {
       chain.doFilter(request, response);
       return;
     }
@@ -65,6 +70,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     } catch (ApiException e) {
       SecurityContextHolder.clearContext();
       errorHandler.write(response, e.getStatus(), ApiError.of(e.getCode(), e.getMessage()));
+      return;
+    } catch (RuntimeException e) {
+      // Ex. baza de date indisponibilă: aceeași eroare 500 ca în GlobalExceptionHandler, nu pagina
+      // implicită Spring Boot.
+      log.error("Eroare la verificarea sesiunii pentru {}", request.getRequestURI(), e);
+      SecurityContextHolder.clearContext();
+      errorHandler.write(
+          response,
+          HttpStatus.INTERNAL_SERVER_ERROR,
+          ApiError.of("EROARE_INTERNA", "A apărut o eroare neașteptată pe server."));
       return;
     }
     chain.doFilter(request, response);

@@ -57,6 +57,17 @@ class SessionServiceTest {
   }
 
   @Test
+  void authenticate_withinOneMinuteOfLastActivity_doesNotUpdateSession() {
+    givenValidTokenAndSession();
+
+    sessionServiceAt(LOGIN_TIME.plusSeconds(30)).authenticate(TOKEN);
+
+    // Fără modificări, deci fără UPDATE în baza de date.
+    assertThat(session.getLastActivityAt()).isEqualTo(LOGIN_TIME);
+    assertThat(session.getExpiresAt()).isEqualTo(LOGIN_TIME.plus(IDLE_TIMEOUT));
+  }
+
+  @Test
   void authenticate_exactly60MinutesWithoutActivity_throwsSessionExpired() {
     givenValidTokenAndSession();
 

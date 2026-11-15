@@ -63,7 +63,7 @@ Aplicația completă are 3 componente, pornite în ordinea: **PostgreSQL → bac
    ```bash
    curl -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"andrei.popescu@student.usv.ro","parola":"parola123"}'
    ```
-   Trebuie să întoarcă `twoFactorRequired: false` și `tokens.accessToken`. Toate celelalte endpoint-uri cer acest token în header-ul `Authorization: Bearer <token>`; fără el răspund cu 401. Sesiunea expiră după 60 de minute fără activitate sau la `POST /api/v1/auth/logout`.
+   Trebuie să întoarcă `twoFactorRequired: false` și `tokens.accessToken`. Toate celelalte endpoint-uri cer acest token în header-ul `Authorization: Bearer <token>`; fără el răspund cu 401. Sesiunea expiră după 60 de minute fără activitate sau la `POST /api/v1/auth/logout`. Indiferent de activitate, tokenul este valabil maximum 8 ore (`expiresIn` din răspunsul la login); după aceea se cere o autentificare nouă. Toate aceste cazuri întorc 401 (`SESIUNE_EXPIRATA` sau `TOKEN_INVALID`), iar frontend-ul le tratează la fel: redirect la login.
 
    Utilizatorii din datele de test au parola `parola123`. Fără 2FA (primesc tokenul direct): `andrei.popescu@student.usv.ro`, `stefan.rusu@student.usv.ro` (studenți), `elena.marin@usv.ro` (coordonator de grant).
 4. **Frontend-ul:** vezi [Pornire rapidă în rrm-frontend](https://github.com/student-team-origin/rrm-frontend#pornire-rapidă).

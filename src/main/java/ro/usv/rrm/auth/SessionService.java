@@ -1,6 +1,7 @@
 package ro.usv.rrm.auth;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -16,13 +17,19 @@ import ro.usv.rrm.user.User;
  * Verificarea sesiunii la fiecare cerere și închiderea ei la logout.
  *
  * <p>Tokenul JWT singur nu ajunge: sesiunea din tabela {@code sesiune} trebuie să nu fie revocată
- * și să nu fi expirat din inactivitate. Fiecare cerere validă mută expirarea cu încă {@code
- * rrm.auth.session-idle-timeout} (60 de minute) de la momentul cererii.
+ * și să nu fi expirat din inactivitate. Activitatea mută expirarea cu încă {@code
+ * rrm.auth.session-idle-timeout} (60 de minute), cel mult o dată pe minut.
+ *
+ * <p>Independent de activitate, tokenul JWT expiră după {@code rrm.auth.access-token-ttl} (8 ore):
+ * durata maximă a unei sesiuni, după care utilizatorul se autentifică din nou.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class SessionService {
+
+  /** Cât de des se actualizează ultima activitate a unei sesiuni. */
+  static final Duration ACTIVITY_UPDATE_INTERVAL = Duration.ofMinutes(1);
 
   private final JwtService jwtService;
   private final UserSessionRepository sessionRepository;
@@ -53,8 +60,13 @@ public class SessionService {
       throw ApiException.unauthorized(
           "CONT_DEZACTIVAT", "Contul este dezactivat. Contactează administratorul.");
     }
-    session.setLastActivityAt(now);
-    session.setExpiresAt(now.plus(properties.auth().sessionIdleTimeout()));
+    // Prelungirea înseamnă un UPDATE; o facem cel mult o dată pe minut, nu la fiecare cerere
+    // (ex. interogarea periodică a notificărilor). Expirarea poate veni cu până la un minut mai
+    // devreme, neglijabil față de cele 60 de minute.
+    if (!now.isBefore(session.getLastActivityAt().plus(ACTIVITY_UPDATE_INTERVAL))) {
+      session.setLastActivityAt(now);
+      session.setExpiresAt(now.plus(properties.auth().sessionIdleTimeout()));
+    }
     return new AuthenticatedUser(user.getId(), session.getTokenId());
   }
 

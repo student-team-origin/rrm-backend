@@ -41,7 +41,11 @@ class SessionIntegrationTest {
   @Test
   void me_withValidToken_returnsUserAndExtendsSession() throws Exception {
     String token = login();
-    updateSessions("UPDATE sesiune SET expira_la = now() + interval '5 minutes'");
+    // Ultima activitate acum 2 minute (peste pragul de un minut), deci cererea prelungește
+    // sesiunea.
+    updateSessions(
+        "UPDATE sesiune SET ultima_activitate = now() - interval '2 minutes',"
+            + " expira_la = now() + interval '5 minutes'");
 
     mockMvc
         .perform(get("/api/v1/auth/me").header(HttpHeaders.AUTHORIZATION, bearer(token)))

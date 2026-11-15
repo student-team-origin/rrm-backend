@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
@@ -21,6 +22,8 @@ import tools.jackson.databind.json.JsonMapper;
 @RequiredArgsConstructor
 public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDeniedHandler {
 
+  private static final String NOT_AUTHENTICATED = "NEAUTENTIFICAT";
+
   private final JsonMapper jsonMapper;
 
   /** 401: cerere fără token către un endpoint protejat. */
@@ -31,7 +34,7 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
     write(
         response,
         HttpStatus.UNAUTHORIZED,
-        ApiError.of("NEAUTENTIFICAT", "Autentifică-te pentru a continua."));
+        ApiError.of(NOT_AUTHENTICATED, "Autentifică-te pentru a continua."));
   }
 
   /** 403: utilizator autentificat, dar fără rolul necesar (folosit de RBAC, TO-33). */
@@ -47,8 +50,19 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
 
   void write(HttpServletResponse response, HttpStatus status, ApiError error) throws IOException {
     response.setStatus(status.value());
+    if (status == HttpStatus.UNAUTHORIZED) {
+      response.setHeader(HttpHeaders.WWW_AUTHENTICATE, wwwAuthenticate(error.code()));
+    }
     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
     response.setCharacterEncoding("UTF-8");
     jsonMapper.writeValue(response.getOutputStream(), error);
+  }
+
+  /**
+   * Header-ul recomandat de RFC 6750 la 401: fără token, doar schema; cu un token respins, și
+   * {@code error="invalid_token"}, ca clientul să știe că trebuie să se autentifice din nou.
+   */
+  private static String wwwAuthenticate(String code) {
+    return NOT_AUTHENTICATED.equals(code) ? "Bearer" : "Bearer error=\"invalid_token\"";
   }
 }
