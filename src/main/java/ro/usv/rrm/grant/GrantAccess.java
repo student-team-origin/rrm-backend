@@ -26,8 +26,8 @@ public class GrantAccess {
         .currentUser()
         .map(user ->
             user.isSystemAdmin()
-                || !grantRepository.existsById(grantId)
-                || grantRepository.isPartOfGrant(grantId, user.userId()))
+                || user.coordinatesGrant(grantId)
+                || grantRepository.isMemberOrMissing(grantId, user.userId()))
         .orElse(false);
   }
 }

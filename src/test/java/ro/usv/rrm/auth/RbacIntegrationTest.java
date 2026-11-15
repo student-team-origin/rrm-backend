@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -45,6 +46,7 @@ class RbacIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
   @Autowired private JdbcTemplate jdbc;
+  @Autowired private EntityManager entityManager;
 
   // ───────────── Criteriul de acceptare: endpoint de administrare ─────────────
 
@@ -90,6 +92,27 @@ class RbacIntegrationTest {
         .andExpect(jsonPath("$.oreRamase").isNumber());
     mockMvc
         .perform(as(COORDINATOR_GRANT_2, get("/api/v1/grants/1")))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void grantVisibility_followsCoordinatorRole_notGrantColumn() throws Exception {
+    // Coloana coordonator_id indică alt utilizator, dar rolul CoordonatorGrant pe grantul 2 rămâne:
+    // Elena vede grantul în continuare, la fel cum îi poate aproba rezervările.
+    jdbc.update("UPDATE grant_cercetare SET coordonator_id = 4 WHERE id = 2");
+    mockMvc.perform(as(COORDINATOR_GRANT_2, get("/api/v1/grants/2"))).andExpect(status().isOk());
+
+    // Fără rol (și fără să fie membru), nu mai vede grantul.
+    jdbc.update("DELETE FROM utilizator_rol WHERE utilizator_id = 5 AND rol = 'CoordonatorGrant'");
+    // Totul rulează într-o tranzacție: Hibernate ar refolosi rolurile încărcate la login-ul
+    // anterior.
+    entityManager.clear();
+    mockMvc
+        .perform(as(COORDINATOR_GRANT_2, get("/api/v1/grants")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(0));
+    mockMvc
+        .perform(as(COORDINATOR_GRANT_2, get("/api/v1/grants/2")))
         .andExpect(status().isForbidden());
   }
 
