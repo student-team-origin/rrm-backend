@@ -11,13 +11,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.test.context.support.WithAnonymousUser;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import ro.usv.rrm.auth.SessionService;
 import ro.usv.rrm.common.config.RrmProperties;
 import ro.usv.rrm.common.config.SecurityConfig;
 import ro.usv.rrm.common.error.ApiException;
 import ro.usv.rrm.laboratory.dto.LaboratoryResponse;
 
+@WithMockUser
 @WebMvcTest(LaboratoryController.class)
 @Import(SecurityConfig.class)
 @EnableConfigurationProperties(RrmProperties.class)
@@ -26,6 +30,9 @@ class LaboratoryControllerTest {
   @Autowired private MockMvc mockMvc;
 
   @MockitoBean private LaboratoryService laboratoryService;
+
+  /** Cerut de filtrul JWT din SecurityConfig; testele folosesc @WithMockUser. */
+  @MockitoBean private SessionService sessionService;
 
   @Test
   void getLabs_returns200WithContractFields() throws Exception {
@@ -66,5 +73,15 @@ class LaboratoryControllerTest {
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("LABORATOR_INEXISTENT"))
         .andExpect(jsonPath("$.message").exists());
+  }
+
+  @Test
+  @WithAnonymousUser
+  void getLabs_withoutToken_returns401InCommonErrorFormat() throws Exception {
+    mockMvc
+        .perform(get("/api/v1/labs"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("NEAUTENTIFICAT"))
+        .andExpect(jsonPath("$.message").value("Autentifică-te pentru a continua."));
   }
 }
