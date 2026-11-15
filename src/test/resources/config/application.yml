@@ -1,0 +1,4 @@
+# Setări doar pentru teste (classpath:/config/ suprascrie application.yml principal).
+rrm:
+  auth:
+    jwt-secret: rrm-secret-pentru-teste-cu-minimum-32-de-caractere

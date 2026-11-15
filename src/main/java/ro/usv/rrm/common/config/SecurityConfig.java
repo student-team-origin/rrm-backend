@@ -9,6 +9,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
@@ -18,8 +20,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 /**
  * Configurația de securitate.
  *
- * <p>Deocamdată toate endpoint-urile sunt publice, pentru dezvoltarea CRUD-ului de resurse.
- * Autentificarea JWT, 2FA și RBAC se adaugă în tichetele TO-1, TO-2 și TO-3.
+ * <p>Deocamdată toate endpoint-urile sunt publice. Login-ul ({@code POST /auth/login}) emite deja
+ * tokenul JWT (TO-30); verificarea lui la fiecare cerere se adaugă în TO-31, iar RBAC în TO-33.
  */
 @Configuration
 @RequiredArgsConstructor
@@ -36,9 +38,15 @@ public class SecurityConfig {
         .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .httpBasic(AbstractHttpConfigurer::disable)
         .formLogin(AbstractHttpConfigurer::disable)
-        // TODO: TO-1, TO-3 - restricționare pe roluri după implementarea autentificării JWT.
+        // TODO: TO-31, TO-33 - filtrul JWT și restricționarea pe roluri.
         .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
         .build();
+  }
+
+  /** Hash-urile parolelor din tabela {@code utilizator} sunt BCrypt (cost 10). */
+  @Bean
+  PasswordEncoder passwordEncoder() {
+    return new BCryptPasswordEncoder();
   }
 
   /**
