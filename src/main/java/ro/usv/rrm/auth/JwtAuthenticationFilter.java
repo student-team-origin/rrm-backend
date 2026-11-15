@@ -5,7 +5,6 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -64,9 +63,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     try {
       AuthenticatedUser user =
           sessionService.authenticate(header.substring(BEARER_PREFIX.length()).strip());
-      // Rolurile (authorities) se adaugă în TO-33.
       SecurityContextHolder.getContext()
-          .setAuthentication(new UsernamePasswordAuthenticationToken(user, null, List.of()));
+          .setAuthentication(
+              new UsernamePasswordAuthenticationToken(user, null, user.authorities()));
     } catch (ApiException e) {
       SecurityContextHolder.clearContext();
       errorHandler.write(response, e.getStatus(), ApiError.of(e.getCode(), e.getMessage()));

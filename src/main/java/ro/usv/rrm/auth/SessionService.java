@@ -67,7 +67,10 @@ public class SessionService {
       session.setLastActivityAt(now);
       session.setExpiresAt(now.plus(properties.auth().sessionIdleTimeout()));
     }
-    return new AuthenticatedUser(user.getId(), session.getTokenId());
+    return new AuthenticatedUser(
+        user.getId(),
+        session.getTokenId(),
+        user.getRoles().stream().map(ScopedRole::from).toList());
   }
 
   /** Închide sesiunea (logout): tokenul ei nu mai este acceptat, chiar dacă nu a expirat. */

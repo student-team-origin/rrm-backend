@@ -45,7 +45,7 @@ public class ReservationController {
   @GetMapping("/{reservationId}")
   public ReservationDetailResponse getReservation(
       @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Long reservationId) {
-    return reservationService.findById(reservationId, user.userId());
+    return reservationService.findById(reservationId, user);
   }
 
   @PostMapping("/{reservationId}/cancel")

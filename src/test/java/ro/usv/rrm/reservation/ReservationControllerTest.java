@@ -49,7 +49,7 @@ import ro.usv.rrm.user.dto.UserRoleResponse;
 class ReservationControllerTest {
 
   private static final AuthenticatedUser USER =
-      new AuthenticatedUser(6, UUID.fromString("5f0c6b9e-6f3a-4c55-9d43-1d2f1f9f2a10"));
+      new AuthenticatedUser(6, UUID.fromString("5f0c6b9e-6f3a-4c55-9d43-1d2f1f9f2a10"), List.of());
 
   private static final Instant START = Instant.parse("2026-11-16T12:00:00Z");
 
@@ -157,7 +157,7 @@ class ReservationControllerTest {
 
   @Test
   void getReservation_allowed_returnsDetailWithApprovals() throws Exception {
-    given(reservationService.findById(3L, 6L)).willReturn(detail());
+    given(reservationService.findById(3L, USER)).willReturn(detail());
 
     mockMvc
         .perform(get("/api/v1/reservations/3").with(authentication(authenticated(USER))))
@@ -175,7 +175,7 @@ class ReservationControllerTest {
 
   @Test
   void getReservation_notAllowed_returns403() throws Exception {
-    given(reservationService.findById(2L, 6L))
+    given(reservationService.findById(2L, USER))
         .willThrow(ApiException.forbidden("REZERVARE_INACCESIBILA", "Nu ai acces."));
 
     mockMvc
@@ -186,7 +186,7 @@ class ReservationControllerTest {
 
   @Test
   void getReservation_unknownId_returns404() throws Exception {
-    given(reservationService.findById(999L, 6L))
+    given(reservationService.findById(999L, USER))
         .willThrow(ApiException.notFound("REZERVARE_INEXISTENTA", "Nu există."));
 
     mockMvc

@@ -7,7 +7,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface UserSessionRepository extends JpaRepository<UserSession, Long> {
 
-  /** Încarcă și utilizatorul, verificat la fiecare cerere (cont activ). */
-  @EntityGraph(attributePaths = "user")
+  /**
+   * Încarcă, în aceeași interogare, și utilizatorul (cont activ) și rolurile lui, necesare la
+   * fiecare cerere pentru RBAC.
+   */
+  @EntityGraph(attributePaths = {"user", "user.roles"})
   Optional<UserSession> findByTokenId(UUID tokenId);
 }

@@ -8,6 +8,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -31,6 +32,16 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(ApiException.class)
   ResponseEntity<ApiError> handleApiException(ApiException ex) {
     return ResponseEntity.status(ex.getStatus()).body(ApiError.of(ex.getCode(), ex.getMessage()));
+  }
+
+  /**
+   * 403 de la {@code @PreAuthorize}: excepția apare în controller, deci ajunge aici, nu la {@code
+   * SecurityErrorHandler}. Fără acest handler, ar deveni 500.
+   */
+  @ExceptionHandler(AccessDeniedException.class)
+  ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex) {
+    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+        .body(ApiError.of("ACCES_INTERZIS", "Nu ai drepturi pentru această operație."));
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)

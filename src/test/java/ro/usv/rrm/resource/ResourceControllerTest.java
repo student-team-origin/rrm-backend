@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -23,6 +24,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import ro.usv.rrm.auth.AccessControl;
 import ro.usv.rrm.auth.SessionService;
 import ro.usv.rrm.common.config.RrmProperties;
 import ro.usv.rrm.common.config.SecurityConfig;
@@ -57,6 +59,50 @@ class ResourceControllerTest {
 
   /** Cerut de filtrul JWT din SecurityConfig; testele folosesc @WithMockUser. */
   @MockitoBean private SessionService sessionService;
+
+  /**
+   * Verificările din @PreAuthorize. Aici testăm controllerul, deci le permitem implicit; regulile
+   * RBAC propriu-zise sunt testate în AccessControlTest și RbacIntegrationTest.
+   */
+  @MockitoBean(name = "access")
+  private AccessControl access;
+
+  @MockitoBean(name = "resourceAccess")
+  private ResourceAccess resourceAccess;
+
+  @BeforeEach
+  void allowByDefault() {
+    given(access.canManageLaboratory(any())).willReturn(true);
+    given(resourceAccess.canManage(any())).willReturn(true);
+  }
+
+  @Test
+  void createResource_withoutRightsOnLaboratory_returns403() throws Exception {
+    given(access.canManageLaboratory(1L)).willReturn(false);
+
+    mockMvc
+        .perform(
+            post("/api/v1/resources")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"denumire": "Braț robotic UR5", "categorieId": 2, "laboratorId": 1}
+                    """))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("ACCES_INTERZIS"));
+    then(resourceService).shouldHaveNoInteractions();
+  }
+
+  @Test
+  void deleteResource_withoutRightsOnResource_returns403() throws Exception {
+    given(resourceAccess.canManage(1L)).willReturn(false);
+
+    mockMvc
+        .perform(delete("/api/v1/resources/1"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("ACCES_INTERZIS"));
+    then(resourceService).shouldHaveNoInteractions();
+  }
 
   @Test
   void getResources_withFilters_passesThemAndReturnsPage() throws Exception {

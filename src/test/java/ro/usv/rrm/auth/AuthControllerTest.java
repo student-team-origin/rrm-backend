@@ -40,7 +40,7 @@ import ro.usv.rrm.user.dto.UserRoleResponse;
 class AuthControllerTest {
 
   private static final AuthenticatedUser USER =
-      new AuthenticatedUser(6, UUID.fromString("5f0c6b9e-6f3a-4c55-9d43-1d2f1f9f2a10"));
+      new AuthenticatedUser(6, UUID.fromString("5f0c6b9e-6f3a-4c55-9d43-1d2f1f9f2a10"), List.of());
 
   private static final String LOGIN_JSON =
       """
