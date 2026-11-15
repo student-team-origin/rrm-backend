@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -30,10 +31,12 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>API-ul este stateless: fiecare cerere se autentifică prin {@link JwtAuthenticationFilter}
  * (token JWT + sesiunea din tabela {@code sesiune}). Toate endpoint-urile cer autentificare, cu
- * excepția celor marcate {@code security: []} în contract și implementate deja (login). Erorile
- * 401/403 au formatul JSON comun.
+ * excepția celor marcate {@code security: []} în contract și implementate deja (login). Rolurile
+ * (RBAC cu scop) se verifică pe endpoint-uri cu {@code @PreAuthorize}. Erorile 401/403 au formatul
+ * JSON comun.
  */
 @Configuration
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -56,7 +59,8 @@ public class SecurityConfig {
             UsernamePasswordAuthenticationFilter.class)
         .exceptionHandling(
             e -> e.authenticationEntryPoint(errorHandler).accessDeniedHandler(errorHandler))
-        // TODO: TO-33 - restricționarea pe roluri (RBAC cu scop).
+        // Aici doar „autentificat sau nu”; rolurile și scopul se verifică pe metode, cu
+        // @PreAuthorize (vezi AccessControl).
         .authorizeHttpRequests(auth ->
             auth.requestMatchers(publicEndpoints)
                 .permitAll()

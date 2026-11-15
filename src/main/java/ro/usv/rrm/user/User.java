@@ -16,6 +16,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.Generated;
 
 /**
@@ -58,7 +59,9 @@ public class User {
   private boolean active = true;
 
   /** Rolurile utilizatorului, cu scopul fiecăruia. Se modifică doar prin {@link UserRole}. */
+  // Într-o listă de utilizatori, rolurile se încarcă în loturi, nu cu o interogare per utilizator.
   @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
+  @BatchSize(size = 100)
   @Setter(AccessLevel.NONE)
   private List<UserRole> roles = new ArrayList<>();
 

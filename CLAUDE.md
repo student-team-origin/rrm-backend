@@ -146,7 +146,11 @@ Fiecare modul de domeniu conține: `XController`, `XService`, `XRepository`, `X`
   Nu crea clase de excepții noi pentru fiecare caz. Validarea `@Valid` produce automat 400 cu `fields`.
 - **Configurație:** setările proprii stau în secțiunea `rrm:` din `application.yml` și se citesc prin `RrmProperties` (`record` cu `@ConfigurationProperties`), injectat în constructor. Nu folosi `@Value`.
 - **Liste paginate:** întoarce `PageResponse.from(page, ResourceResponse::from)`. Forma JSON (`items`, `page`, `size`, `total`) este cea din `openapi.yaml`.
-- **Securitatea** este momentan deschisă (`permitAll` în `SecurityConfig`) până la TO-1/TO-3.
+- **Autentificare:** toate endpoint-urile cer token JWT (`Authorization: Bearer`), mai puțin `POST /auth/login`. Utilizatorul curent se primește în controller cu `@AuthenticationPrincipal AuthenticatedUser user` (id, sesiune, rolurile cu scop).
+- **Autorizare (RBAC cu scop):**
+  - orice endpoint care modifică date (POST/PUT/PATCH/DELETE) are `@PreAuthorize`, cu `@access` (`AccessControl`) sau o componentă a modulului (ex. `@resourceAccess`, `@grantAccess`). Excepțiile (endpoint public sau drept verificat în Service pe datele cererii) se trec explicit, cu motivul, în `SecuredEndpointsTest`;
+  - drepturile vin **doar din rolurile din `utilizator_rol`**: Coordonator pe grantul X, Responsabil pe laboratorul Y, Administrator global. Coloanele `grant_cercetare.coordonator_id` și `laborator.responsabil_id` sunt informative; nu verifica drepturi pe baza lor;
+  - pentru un id inexistent, verificarea întoarce `true`, ca răspunsul să fie 404, nu 403.
 - **Câmpurile JSON urmează `openapi.yaml`** (în română: `denumire`, `categorieId`, `stare`...). Numele componentelor record din DTO-uri sunt cele din contract, chiar dacă clasele și restul codului sunt în engleză.
 
 ### Reguli

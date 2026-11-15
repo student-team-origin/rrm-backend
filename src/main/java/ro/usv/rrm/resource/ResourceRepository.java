@@ -1,5 +1,6 @@
 package ro.usv.rrm.resource;
 
+import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -25,4 +26,8 @@ public interface ResourceRepository
       value = "SELECT EXISTS (SELECT 1 FROM rezervare WHERE resursa_id = :resourceId)",
       nativeQuery = true)
   boolean hasReservations(@Param("resourceId") Long resourceId);
+
+  /** Laboratorul unei resurse, fără a încărca entitatea (pentru verificarea drepturilor). */
+  @Query("SELECT r.laboratory.id FROM Resource r WHERE r.id = :resourceId")
+  Optional<Long> findLaboratoryIdById(@Param("resourceId") Long resourceId);
 }

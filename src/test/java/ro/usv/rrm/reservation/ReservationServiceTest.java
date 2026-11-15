@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +31,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 import ro.usv.rrm.approval.ApprovalDecision;
 import ro.usv.rrm.approval.ApprovalService;
 import ro.usv.rrm.approval.dto.ApprovalResponse;
+import ro.usv.rrm.auth.AuthenticatedUser;
+import ro.usv.rrm.auth.ScopedRole;
 import ro.usv.rrm.common.error.ApiException;
 import ro.usv.rrm.common.web.PageResponse;
 import ro.usv.rrm.laboratory.Laboratory;
@@ -40,9 +43,6 @@ import ro.usv.rrm.resource.ResourceCategory;
 import ro.usv.rrm.user.Role;
 import ro.usv.rrm.user.ScopeType;
 import ro.usv.rrm.user.User;
-import ro.usv.rrm.user.UserService;
-import ro.usv.rrm.user.dto.UserResponse;
-import ro.usv.rrm.user.dto.UserRoleResponse;
 
 @ExtendWith(MockitoExtension.class)
 class ReservationServiceTest {
@@ -52,10 +52,10 @@ class ReservationServiceTest {
   private static final long OTHER_USER_ID = 7L;
   private static final long GRANT_ID = 1L;
   private static final long LABORATORY_ID = 1L;
+  private static final UUID SESSION_ID = UUID.fromString("5f0c6b9e-6f3a-4c55-9d43-1d2f1f9f2a10");
 
   @Mock private ReservationRepository reservationRepository;
   @Mock private ApprovalService approvalService;
-  @Mock private UserService userService;
 
   private ReservationService reservationService;
   private Reservation reservation;
@@ -64,7 +64,7 @@ class ReservationServiceTest {
   void setUp() {
     reservationService =
         new ReservationService(
-            reservationRepository, approvalService, userService, Clock.fixed(NOW, ZoneOffset.UTC));
+            reservationRepository, approvalService, Clock.fixed(NOW, ZoneOffset.UTC));
     reservation = reservationStartingAt(NOW.plus(Duration.ofDays(1)));
   }
 
@@ -96,50 +96,52 @@ class ReservationServiceTest {
             1L, 100L, 4L, 1, ApprovalDecision.APPROVED, null, NOW.minus(Duration.ofHours(1)));
     given(approvalService.findByReservation(100L)).willReturn(List.of(approval));
 
-    ReservationDetailResponse detail = reservationService.findById(100L, REQUESTER_ID);
+    ReservationDetailResponse detail = reservationService.findById(100L, user(REQUESTER_ID));
 
     assertThat(detail.id()).isEqualTo(100L);
     assertThat(detail.stare()).isEqualTo(ReservationStatus.PENDING_LABORATORY);
     assertThat(detail.resursa().denumire()).isEqualTo("Imprimantă 3D Prusa MK4");
     assertThat(detail.solicitant().id()).isEqualTo(REQUESTER_ID);
     assertThat(detail.aprobari()).containsExactly(approval);
-    then(userService).should(never()).findById(anyLong());
   }
 
   @Test
   void findById_coordinatorOfReservationGrant_returnsDetail() {
-    givenRoles(OTHER_USER_ID, role(Role.GRANT_COORDINATOR, ScopeType.GRANT, GRANT_ID));
+    AuthenticatedUser other =
+        givenRoles(OTHER_USER_ID, role(Role.GRANT_COORDINATOR, ScopeType.GRANT, GRANT_ID));
 
-    assertThat(reservationService.findById(100L, OTHER_USER_ID).id()).isEqualTo(100L);
+    assertThat(reservationService.findById(100L, other).id()).isEqualTo(100L);
   }
 
   @Test
   void findById_managerOfResourceLaboratory_returnsDetail() {
-    givenRoles(OTHER_USER_ID, role(Role.LAB_MANAGER, ScopeType.LABORATORY, LABORATORY_ID));
+    AuthenticatedUser other =
+        givenRoles(OTHER_USER_ID, role(Role.LAB_MANAGER, ScopeType.LABORATORY, LABORATORY_ID));
 
-    assertThat(reservationService.findById(100L, OTHER_USER_ID).id()).isEqualTo(100L);
+    assertThat(reservationService.findById(100L, other).id()).isEqualTo(100L);
   }
 
   @Test
   void findById_systemAdministrator_returnsDetail() {
-    givenRoles(OTHER_USER_ID, role(Role.SYSTEM_ADMIN, ScopeType.GLOBAL, null));
+    AuthenticatedUser other =
+        givenRoles(OTHER_USER_ID, role(Role.SYSTEM_ADMIN, ScopeType.GLOBAL, null));
 
-    assertThat(reservationService.findById(100L, OTHER_USER_ID).id()).isEqualTo(100L);
+    assertThat(reservationService.findById(100L, other).id()).isEqualTo(100L);
   }
 
   @Test
   void findById_userWhoAlreadyDecided_returnsDetail() {
-    givenRoles(OTHER_USER_ID, role(Role.STUDENT, ScopeType.GLOBAL, null));
+    AuthenticatedUser other = givenRoles(OTHER_USER_ID, role(Role.STUDENT, ScopeType.GLOBAL, null));
     given(approvalService.hasDecided(100L, OTHER_USER_ID)).willReturn(true);
 
-    assertThat(reservationService.findById(100L, OTHER_USER_ID).id()).isEqualTo(100L);
+    assertThat(reservationService.findById(100L, other).id()).isEqualTo(100L);
   }
 
   @Test
   void findById_otherStudent_throwsForbidden() {
-    givenRoles(OTHER_USER_ID, role(Role.STUDENT, ScopeType.GLOBAL, null));
+    AuthenticatedUser other = givenRoles(OTHER_USER_ID, role(Role.STUDENT, ScopeType.GLOBAL, null));
 
-    Throwable ex = catchThrowable(() -> reservationService.findById(100L, OTHER_USER_ID));
+    Throwable ex = catchThrowable(() -> reservationService.findById(100L, other));
 
     assertApiError(ex, HttpStatus.FORBIDDEN, "REZERVARE_INACCESIBILA");
     then(approvalService).should(never()).findByReservation(anyLong());
@@ -147,12 +149,13 @@ class ReservationServiceTest {
 
   @Test
   void findById_rolesScopedToOtherGrantAndLaboratory_throwsForbidden() {
-    givenRoles(
-        OTHER_USER_ID,
-        role(Role.GRANT_COORDINATOR, ScopeType.GRANT, 2L),
-        role(Role.LAB_MANAGER, ScopeType.LABORATORY, 2L));
+    AuthenticatedUser other =
+        givenRoles(
+            OTHER_USER_ID,
+            role(Role.GRANT_COORDINATOR, ScopeType.GRANT, 2L),
+            role(Role.LAB_MANAGER, ScopeType.LABORATORY, 2L));
 
-    Throwable ex = catchThrowable(() -> reservationService.findById(100L, OTHER_USER_ID));
+    Throwable ex = catchThrowable(() -> reservationService.findById(100L, other));
 
     assertApiError(ex, HttpStatus.FORBIDDEN, "REZERVARE_INACCESIBILA");
   }
@@ -161,7 +164,7 @@ class ReservationServiceTest {
   void findById_unknownId_throwsNotFound() {
     given(reservationRepository.findById(999L)).willReturn(Optional.empty());
 
-    Throwable ex = catchThrowable(() -> reservationService.findById(999L, REQUESTER_ID));
+    Throwable ex = catchThrowable(() -> reservationService.findById(999L, user(REQUESTER_ID)));
 
     assertApiError(ex, HttpStatus.NOT_FOUND, "REZERVARE_INEXISTENTA");
   }
@@ -259,15 +262,18 @@ class ReservationServiceTest {
     return withId(reservation, 100L);
   }
 
-  private void givenRoles(long userId, UserRoleResponse... roles) {
+  /** Rezervarea 100 există, iar utilizatorul dat o cere cu rolurile date. */
+  private AuthenticatedUser givenRoles(long userId, ScopedRole... roles) {
     given(reservationRepository.findById(100L)).willReturn(Optional.of(reservation));
-    given(userService.findById(userId))
-        .willReturn(
-            new UserResponse(userId, "Utilizator", "user@usv.ro", true, false, List.of(roles)));
+    return new AuthenticatedUser(userId, SESSION_ID, List.of(roles));
   }
 
-  private static UserRoleResponse role(Role role, ScopeType scopeType, Long scopeId) {
-    return new UserRoleResponse(role, scopeType, scopeId);
+  private static AuthenticatedUser user(long userId) {
+    return new AuthenticatedUser(userId, SESSION_ID, List.of());
+  }
+
+  private static ScopedRole role(Role role, ScopeType scopeType, Long scopeId) {
+    return new ScopedRole(role, scopeType, scopeId);
   }
 
   /** Id-ul este generat de baza de date și nu are setter; în testele unitare îl setăm direct. */

@@ -5,6 +5,7 @@ import java.net.URI;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -23,7 +24,11 @@ import ro.usv.rrm.resource.dto.ChangeResourceStatusResponse;
 import ro.usv.rrm.resource.dto.CreateResourceRequest;
 import ro.usv.rrm.resource.dto.ResourceResponse;
 
-/** CRUD-ul catalogului de resurse (tag-ul {@code Resurse} din contract). */
+/**
+ * CRUD-ul catalogului de resurse (tag-ul {@code Resurse} din contract). Citirea este permisă
+ * oricărui utilizator autentificat; modificările doar Responsabilului laboratorului resursei și
+ * Administratorului de sistem.
+ */
 @RestController
 @RequestMapping("/resources")
 @RequiredArgsConstructor
@@ -49,6 +54,7 @@ public class ResourceController {
   }
 
   @PostMapping
+  @PreAuthorize("@access.canManageLaboratory(#request.laboratorId())")
   public ResponseEntity<ResourceResponse> createResource(
       @Valid @RequestBody CreateResourceRequest request) {
     ResourceResponse created = resourceService.create(request);
@@ -60,7 +66,11 @@ public class ResourceController {
     return ResponseEntity.created(location).body(created);
   }
 
+  /** Trebuie drepturi și pe laboratorul actual al resursei, și pe cel nou (dacă se mută). */
   @PutMapping("/{resourceId}")
+  @PreAuthorize(
+      "@resourceAccess.canManage(#resourceId)"
+          + " and @access.canManageLaboratory(#request.laboratorId())")
   public ResourceResponse updateResource(
       @PathVariable Long resourceId, @Valid @RequestBody CreateResourceRequest request) {
     return resourceService.update(resourceId, request);
@@ -68,11 +78,13 @@ public class ResourceController {
 
   @DeleteMapping("/{resourceId}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
+  @PreAuthorize("@resourceAccess.canManage(#resourceId)")
   public void deleteResource(@PathVariable Long resourceId) {
     resourceService.delete(resourceId);
   }
 
   @PatchMapping("/{resourceId}/status")
+  @PreAuthorize("@resourceAccess.canManage(#resourceId)")
   public ChangeResourceStatusResponse changeResourceStatus(
       @PathVariable Long resourceId, @Valid @RequestBody ChangeResourceStatusRequest request) {
     return resourceService.changeStatus(resourceId, request);

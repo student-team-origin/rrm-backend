@@ -17,11 +17,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.test.util.ReflectionTestUtils;
 import ro.usv.rrm.auth.JwtService.AccessTokenClaims;
 import ro.usv.rrm.common.config.RrmProperties;
 import ro.usv.rrm.common.error.ApiException;
+import ro.usv.rrm.user.Role;
+import ro.usv.rrm.user.ScopeType;
 import ro.usv.rrm.user.User;
+import ro.usv.rrm.user.UserRole;
 
 @ExtendWith(MockitoExtension.class)
 class SessionServiceTest {
@@ -51,7 +55,7 @@ class SessionServiceTest {
 
     AuthenticatedUser result = sessionServiceAt(now).authenticate(TOKEN);
 
-    assertThat(result).isEqualTo(new AuthenticatedUser(6, SESSION_ID));
+    assertThat(result).isEqualTo(new AuthenticatedUser(6, SESSION_ID, List.of()));
     assertThat(session.getLastActivityAt()).isEqualTo(now);
     assertThat(session.getExpiresAt()).isEqualTo(now.plus(IDLE_TIMEOUT));
   }
@@ -65,6 +69,23 @@ class SessionServiceTest {
     // Fără modificări, deci fără UPDATE în baza de date.
     assertThat(session.getLastActivityAt()).isEqualTo(LOGIN_TIME);
     assertThat(session.getExpiresAt()).isEqualTo(LOGIN_TIME.plus(IDLE_TIMEOUT));
+  }
+
+  @Test
+  void authenticate_userWithScopedRoles_returnsRolesAndAuthorities() {
+    user.getRoles().add(new UserRole(user, Role.GRANT_COORDINATOR, ScopeType.GRANT, 2L));
+    user.getRoles().add(new UserRole(user, Role.STUDENT, ScopeType.GLOBAL, null));
+    givenValidTokenAndSession();
+
+    AuthenticatedUser result = sessionServiceAt(LOGIN_TIME).authenticate(TOKEN);
+
+    assertThat(result.roles())
+        .containsExactly(
+            new ScopedRole(Role.GRANT_COORDINATOR, ScopeType.GRANT, 2L),
+            new ScopedRole(Role.STUDENT, ScopeType.GLOBAL, null));
+    assertThat(result.authorities())
+        .extracting(GrantedAuthority::getAuthority)
+        .containsExactly("ROLE_GRANT_COORDINATOR", "ROLE_STUDENT");
   }
 
   @Test
