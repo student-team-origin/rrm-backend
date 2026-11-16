@@ -1,9 +1,12 @@
 package ro.usv.rrm.reservation;
 
 import jakarta.validation.Valid;
+import java.net.URI;
 import java.time.OffsetDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -12,13 +15,15 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import ro.usv.rrm.auth.AuthenticatedUser;
 import ro.usv.rrm.common.web.PageResponse;
 import ro.usv.rrm.reservation.dto.CancelReservationRequest;
+import ro.usv.rrm.reservation.dto.CreateReservationRequest;
 import ro.usv.rrm.reservation.dto.ReservationDetailResponse;
 import ro.usv.rrm.reservation.dto.ReservationResponse;
 
-/** Rezervările utilizatorului curent (tag-ul {@code Rezervări} din contract). */
+/** Rezervările (tag-ul {@code Rezervări} din contract): crearea cererii și rezervările mele. */
 @RestController
 @RequestMapping("/reservations")
 @RequiredArgsConstructor
@@ -40,6 +45,21 @@ public class ReservationController {
         new ReservationFilter(
             stare, from == null ? null : from.toInstant(), to == null ? null : to.toInstant());
     return reservationService.findMine(user.userId(), filter, page, size);
+  }
+
+  /** Doar cine face parte din grant (sau Administratorul) rezervă pe orele lui. */
+  @PostMapping
+  @PreAuthorize("@grantAccess.canReserve(#request.grantId())")
+  public ResponseEntity<ReservationResponse> createReservation(
+      @AuthenticationPrincipal AuthenticatedUser user,
+      @Valid @RequestBody CreateReservationRequest request) {
+    ReservationResponse created = reservationService.create(request, user.userId());
+    URI location =
+        ServletUriComponentsBuilder.fromCurrentRequest()
+            .path("/{id}")
+            .buildAndExpand(created.id())
+            .toUri();
+    return ResponseEntity.created(location).body(created);
   }
 
   @GetMapping("/{reservationId}")

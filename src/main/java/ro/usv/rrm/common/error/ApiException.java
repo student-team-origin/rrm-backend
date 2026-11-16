@@ -1,5 +1,6 @@
 package ro.usv.rrm.common.error;
 
+import java.util.List;
 import lombok.Getter;
 import org.springframework.http.HttpStatus;
 
@@ -20,10 +21,24 @@ public class ApiException extends RuntimeException {
   private final HttpStatus status;
   private final String code;
 
+  /** Doar pentru {@link #intervalConflict}; altfel {@code null}. */
+  private final List<ApiError.FreeInterval> freeIntervals;
+
   public ApiException(HttpStatus status, String code, String message) {
+    this(status, code, message, null);
+  }
+
+  private ApiException(
+      HttpStatus status, String code, String message, List<ApiError.FreeInterval> freeIntervals) {
     super(message);
     this.status = status;
     this.code = code;
+    this.freeIntervals = freeIntervals == null ? null : List.copyOf(freeIntervals);
+  }
+
+  /** 400 – datele cererii sunt invalide dincolo de validarea pe câmpuri (ex. interval greșit). */
+  public static ApiException badRequest(String code, String message) {
+    return new ApiException(HttpStatus.BAD_REQUEST, code, message);
   }
 
   /** 401 – utilizatorul nu este autentificat (credențiale greșite, token invalid sau expirat). */
@@ -44,6 +59,17 @@ public class ApiException extends RuntimeException {
   /** 409 – operația intră în conflict cu starea curentă (ex. interval ocupat, ștergere blocată). */
   public static ApiException conflict(String code, String message) {
     return new ApiException(HttpStatus.CONFLICT, code, message);
+  }
+
+  /**
+   * 409 – intervalul cerut este ocupat; răspunsul propune intervalele libere (schema {@code
+   * ConflictInterval}).
+   *
+   * @param freeIntervals intervalele libere sau {@code null} dacă nu au putut fi calculate
+   */
+  public static ApiException intervalConflict(
+      String code, String message, List<ApiError.FreeInterval> freeIntervals) {
+    return new ApiException(HttpStatus.CONFLICT, code, message, freeIntervals);
   }
 
   /** 422 – o regulă de business este încălcată (ex. sold de ore insuficient). */

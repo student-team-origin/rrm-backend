@@ -3,6 +3,7 @@ package ro.usv.rrm.grant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ro.usv.rrm.auth.AuthenticatedUser;
 import ro.usv.rrm.common.error.ApiException;
@@ -39,8 +40,25 @@ public class GrantService {
     return grantRepository
         .findWithBalanceById(grantId)
         .map(GrantResponse::from)
-        .orElseThrow(() ->
-            ApiException.notFound(
-                "GRANT_INEXISTENT", "Grantul cu id-ul " + grantId + " nu există."));
+        .orElseThrow(() -> notFound(grantId));
+  }
+
+  /**
+   * Blochează grantul până la finalul tranzacției apelantului și îi întoarce soldul de ore.
+   * Cererile de rezervare pe același grant se serializează astfel, ca două cereri simultane să nu
+   * treacă amândouă de verificarea soldului. Cere o tranzacție deja pornită ({@code MANDATORY}):
+   * fără ea, blocarea s-ar elibera imediat.
+   *
+   * @throws ApiException 404 {@code GRANT_INEXISTENT}
+   */
+  @Transactional(propagation = Propagation.MANDATORY)
+  public GrantResponse getBalanceForUpdate(long grantId) {
+    grantRepository.lockById(grantId).orElseThrow(() -> notFound(grantId));
+    // Citit după blocare: soldul include rezervările confirmate de cererile serializate înainte.
+    return findById(grantId);
+  }
+
+  private static ApiException notFound(long grantId) {
+    return ApiException.notFound("GRANT_INEXISTENT", "Grantul cu id-ul " + grantId + " nu există.");
   }
 }

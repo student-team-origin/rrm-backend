@@ -1,5 +1,6 @@
 package ro.usv.rrm.resource;
 
+import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -7,6 +8,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -26,6 +28,14 @@ public interface ResourceRepository
       value = "SELECT EXISTS (SELECT 1 FROM rezervare WHERE resursa_id = :resourceId)",
       nativeQuery = true)
   boolean hasReservations(@Param("resourceId") Long resourceId);
+
+  /**
+   * Citește resursa și îi blochează rândul până la finalul tranzacției, ca cererile de rezervare pe
+   * aceeași resursă să se serializeze (verificarea suprapunerii vede rezervările confirmate deja).
+   */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT r FROM Resource r WHERE r.id = :id")
+  Optional<Resource> findByIdForUpdate(@Param("id") Long id);
 
   /** Laboratorul unei resurse, fără a încărca entitatea (pentru verificarea drepturilor). */
   @Query("SELECT r.laboratory.id FROM Resource r WHERE r.id = :resourceId")

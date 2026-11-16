@@ -42,6 +42,16 @@ public interface GrantRepository extends JpaRepository<Grant, Long> {
   Optional<GrantBalance> findWithBalanceById(@Param("grantId") long grantId);
 
   /**
+   * Blochează rândul grantului până la finalul tranzacției și întoarce id-ul, dacă grantul există.
+   * {@code NO KEY UPDATE} nu blochează cheile străine spre grant (ex. inserarea unei rezervări),
+   * doar alte blocări ale aceluiași grant.
+   */
+  @Query(
+      value = "SELECT id FROM grant_cercetare WHERE id = :grantId FOR NO KEY UPDATE",
+      nativeQuery = true)
+  Optional<Long> lockById(@Param("grantId") long grantId);
+
+  /**
    * {@code true} dacă utilizatorul este membru al grantului sau dacă grantul nu există (ca
    * verificarea drepturilor să lase Service-ul să răspundă cu 404). O singură interogare.
    */

@@ -29,6 +29,13 @@ public enum ReservationStatus {
   public static final Set<ReservationStatus> CANCELLABLE =
       EnumSet.of(PENDING_COORDINATOR, PENDING_LABORATORY, APPROVED);
 
+  /**
+   * Stările care blochează intervalul resursei: aceleași ca în condiția {@code WHERE} a
+   * constrângerii {@code rezervare_fara_suprapunere}.
+   */
+  public static final Set<ReservationStatus> BLOCKING =
+      EnumSet.of(PENDING_COORDINATOR, PENDING_LABORATORY, APPROVED, ACTIVE);
+
   /** Valoarea folosită în baza de date și în JSON. */
   private final String value;
 

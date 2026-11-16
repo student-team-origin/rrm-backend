@@ -4,14 +4,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 
 import java.math.BigDecimal;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +29,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -36,16 +41,23 @@ import ro.usv.rrm.approval.ApprovalService;
 import ro.usv.rrm.approval.dto.ApprovalResponse;
 import ro.usv.rrm.auth.AuthenticatedUser;
 import ro.usv.rrm.auth.ScopedRole;
+import ro.usv.rrm.common.error.ApiError;
 import ro.usv.rrm.common.error.ApiException;
 import ro.usv.rrm.common.web.PageResponse;
+import ro.usv.rrm.grant.GrantService;
+import ro.usv.rrm.grant.dto.GrantResponse;
 import ro.usv.rrm.laboratory.Laboratory;
+import ro.usv.rrm.reservation.dto.CreateReservationRequest;
 import ro.usv.rrm.reservation.dto.ReservationDetailResponse;
 import ro.usv.rrm.reservation.dto.ReservationResponse;
 import ro.usv.rrm.resource.Resource;
 import ro.usv.rrm.resource.ResourceCategory;
+import ro.usv.rrm.resource.ResourceService;
+import ro.usv.rrm.resource.ResourceStatus;
 import ro.usv.rrm.user.Role;
 import ro.usv.rrm.user.ScopeType;
 import ro.usv.rrm.user.User;
+import ro.usv.rrm.user.UserService;
 
 @ExtendWith(MockitoExtension.class)
 class ReservationServiceTest {
@@ -57,8 +69,15 @@ class ReservationServiceTest {
   private static final long LABORATORY_ID = 1L;
   private static final UUID SESSION_ID = UUID.fromString("5f0c6b9e-6f3a-4c55-9d43-1d2f1f9f2a10");
 
+  /** Mâine, 10:00 ora României (08:00 UTC). */
+  private static final OffsetDateTime TOMORROW_10 =
+      OffsetDateTime.parse("2026-11-16T10:00:00+02:00");
+
   @Mock private ReservationRepository reservationRepository;
   @Mock private ApprovalService approvalService;
+  @Mock private GrantService grantService;
+  @Mock private ResourceService resourceService;
+  @Mock private UserService userService;
 
   private ReservationService reservationService;
   private Reservation reservation;
@@ -67,8 +86,235 @@ class ReservationServiceTest {
   void setUp() {
     reservationService =
         new ReservationService(
-            reservationRepository, approvalService, Clock.fixed(NOW, ZoneOffset.UTC));
+            reservationRepository,
+            approvalService,
+            grantService,
+            resourceService,
+            userService,
+            Clock.fixed(NOW, ZoneOffset.UTC));
     reservation = reservationStartingAt(NOW.plus(Duration.ofDays(1)));
+  }
+
+  // ───────────── create ─────────────
+
+  @Test
+  void create_freeSlot_savesPendingCoordinatorRequest() {
+    final Resource resource = givenResource(ResourceStatus.ACTIVE, 30);
+    givenGrantWithRemainingHours("114.00");
+    given(userService.getUser(REQUESTER_ID)).willReturn(requester());
+    given(reservationRepository.saveAndFlush(any(Reservation.class)))
+        .willAnswer(invocation -> withId(invocation.getArgument(0), 200L));
+
+    ReservationResponse created =
+        reservationService.create(request(TOMORROW_10, TOMORROW_10.plusHours(2)), REQUESTER_ID);
+
+    assertThat(created.id()).isEqualTo(200L);
+    assertThat(created.stare()).isEqualTo(ReservationStatus.PENDING_COORDINATOR);
+    assertThat(created.oreSolicitate()).isEqualByComparingTo("2.00");
+    assertThat(created.resursaId()).isEqualTo(resource.getId());
+    assertThat(created.solicitantId()).isEqualTo(REQUESTER_ID);
+    assertThat(created.scop()).isEqualTo("Imprimarea carcasei");
+    // Intervalul verificat include timpul de pregătire al resursei (30 de minute).
+    then(reservationRepository)
+        .should()
+        .findBlocking(
+            5L,
+            ReservationStatus.BLOCKING,
+            Instant.parse("2026-11-16T08:00:00Z"),
+            Instant.parse("2026-11-16T10:30:00Z"));
+  }
+
+  @Test
+  void create_partialHour_roundsRequestedHoursUp() {
+    givenResource(ResourceStatus.ACTIVE, 0);
+    givenGrantWithRemainingHours("114.00");
+    given(userService.getUser(REQUESTER_ID)).willReturn(requester());
+    given(reservationRepository.saveAndFlush(any(Reservation.class)))
+        .willAnswer(invocation -> withId(invocation.getArgument(0), 200L));
+
+    ReservationResponse created =
+        reservationService.create(request(TOMORROW_10, TOMORROW_10.plusMinutes(20)), REQUESTER_ID);
+
+    assertThat(created.oreSolicitate()).isEqualByComparingTo("0.34");
+  }
+
+  @Test
+  void create_overlappingSlot_throwsConflictWithFreeIntervalsOfThatDay() {
+    givenResource(ResourceStatus.ACTIVE, 30);
+    givenGrantWithRemainingHours("114.00");
+    // Ocupat 09:00–11:00 UTC, blocat până la 11:30 cu timpul de pregătire.
+    given(reservationRepository.findBlocking(eq(5L), any(), any(), any()))
+        .willReturn(
+            List.of(
+                blocking(
+                    Instant.parse("2026-11-16T09:00:00Z"),
+                    Instant.parse("2026-11-16T11:00:00Z"),
+                    Duration.ofMinutes(30))));
+
+    Throwable ex =
+        catchThrowable(() ->
+            reservationService.create(
+                request(TOMORROW_10, TOMORROW_10.plusHours(2)), REQUESTER_ID));
+
+    assertApiError(ex, HttpStatus.CONFLICT, "INTERVAL_OCUPAT");
+    // Ziua de 16 noiembrie după fusul orar al cererii (+02:00): 15 nov. 22:00 – 16 nov. 22:00 UTC.
+    // Primul interval se termină cu 30 de minute (timpul de pregătire) înaintea rezervării.
+    assertThat(((ApiException) ex).getFreeIntervals())
+        .containsExactly(
+            new ApiError.FreeInterval(
+                Instant.parse("2026-11-15T22:00:00Z"), Instant.parse("2026-11-16T08:30:00Z")),
+            new ApiError.FreeInterval(
+                Instant.parse("2026-11-16T11:30:00Z"), Instant.parse("2026-11-16T22:00:00Z")));
+    then(reservationRepository)
+        .should()
+        .findBlocking(
+            5L,
+            ReservationStatus.BLOCKING,
+            Instant.parse("2026-11-15T22:00:00Z"),
+            Instant.parse("2026-11-16T22:30:00Z"));
+    then(reservationRepository).should(never()).saveAndFlush(any());
+  }
+
+  @Test
+  void create_overlappingSlotToday_freeIntervalsStartFromNow() {
+    givenResource(ResourceStatus.ACTIVE, 0);
+    givenGrantWithRemainingHours("114.00");
+    given(reservationRepository.findBlocking(eq(5L), any(), any(), any()))
+        .willReturn(
+            List.of(
+                blocking(
+                    Instant.parse("2026-11-15T13:00:00Z"),
+                    Instant.parse("2026-11-15T15:00:00Z"),
+                    Duration.ZERO)));
+    OffsetDateTime start = OffsetDateTime.parse("2026-11-15T14:00:00Z");
+
+    Throwable ex =
+        catchThrowable(
+            () -> reservationService.create(request(start, start.plusHours(1)), REQUESTER_ID));
+
+    assertApiError(ex, HttpStatus.CONFLICT, "INTERVAL_OCUPAT");
+    assertThat(((ApiException) ex).getFreeIntervals())
+        .containsExactly(
+            new ApiError.FreeInterval(NOW, Instant.parse("2026-11-15T13:00:00Z")),
+            new ApiError.FreeInterval(
+                Instant.parse("2026-11-15T15:00:00Z"), Instant.parse("2026-11-16T00:00:00Z")));
+  }
+
+  @Test
+  void create_overlapRejectedByDatabase_throwsConflict() {
+    givenResource(ResourceStatus.ACTIVE, 30);
+    givenGrantWithRemainingHours("114.00");
+    given(userService.getUser(REQUESTER_ID)).willReturn(requester());
+    given(reservationRepository.saveAndFlush(any(Reservation.class)))
+        .willThrow(
+            new DataIntegrityViolationException(
+                "could not execute statement",
+                new SQLException(
+                    "ERROR: conflicting key value violates exclusion constraint"
+                        + " \"rezervare_fara_suprapunere\"",
+                    "23P01")));
+
+    Throwable ex =
+        catchThrowable(() ->
+            reservationService.create(
+                request(TOMORROW_10, TOMORROW_10.plusHours(2)), REQUESTER_ID));
+
+    assertApiError(ex, HttpStatus.CONFLICT, "INTERVAL_OCUPAT");
+    assertThat(((ApiException) ex).getFreeIntervals()).isNull();
+  }
+
+  @Test
+  void create_otherIntegrityViolation_isRethrown() {
+    givenResource(ResourceStatus.ACTIVE, 30);
+    givenGrantWithRemainingHours("114.00");
+    given(userService.getUser(REQUESTER_ID)).willReturn(requester());
+    DataIntegrityViolationException violation =
+        new DataIntegrityViolationException(
+            "fk", new SQLException("violates foreign key constraint", "23503"));
+    given(reservationRepository.saveAndFlush(any(Reservation.class))).willThrow(violation);
+
+    Throwable ex =
+        catchThrowable(() ->
+            reservationService.create(
+                request(TOMORROW_10, TOMORROW_10.plusHours(2)), REQUESTER_ID));
+
+    assertThat(ex).isSameAs(violation);
+  }
+
+  @Test
+  void create_insufficientGrantBalance_throwsUnprocessable() {
+    givenResource(ResourceStatus.ACTIVE, 30);
+    givenGrantWithRemainingHours("1.50");
+
+    Throwable ex =
+        catchThrowable(() ->
+            reservationService.create(
+                request(TOMORROW_10, TOMORROW_10.plusHours(2)), REQUESTER_ID));
+
+    assertApiError(ex, HttpStatus.UNPROCESSABLE_CONTENT, "SOLD_INSUFICIENT");
+    assertThat(ex)
+        .hasMessage("Grantul mai are 1,5 ore disponibile, iar rezervarea necesită 2 ore.");
+    then(reservationRepository).should(never()).saveAndFlush(any());
+  }
+
+  @Test
+  void create_exactlyRemainingHours_isAllowed() {
+    givenResource(ResourceStatus.ACTIVE, 0);
+    givenGrantWithRemainingHours("2.00");
+    given(userService.getUser(REQUESTER_ID)).willReturn(requester());
+    given(reservationRepository.saveAndFlush(any(Reservation.class)))
+        .willAnswer(invocation -> withId(invocation.getArgument(0), 200L));
+
+    ReservationResponse created =
+        reservationService.create(request(TOMORROW_10, TOMORROW_10.plusHours(2)), REQUESTER_ID);
+
+    assertThat(created.oreSolicitate()).isEqualByComparingTo("2.00");
+  }
+
+  @ParameterizedTest
+  @EnumSource(names = "ACTIVE", mode = EnumSource.Mode.EXCLUDE)
+  void create_unavailableResource_throwsUnprocessable(ResourceStatus status) {
+    givenResource(status, 0);
+    givenGrantWithRemainingHours("114.00");
+
+    Throwable ex =
+        catchThrowable(() ->
+            reservationService.create(
+                request(TOMORROW_10, TOMORROW_10.plusHours(2)), REQUESTER_ID));
+
+    assertApiError(ex, HttpStatus.UNPROCESSABLE_CONTENT, "RESURSA_INDISPONIBILA");
+    then(reservationRepository).should(never()).saveAndFlush(any());
+  }
+
+  @Test
+  void create_endNotAfterStart_throwsBadRequestWithoutLocking() {
+    Throwable ex =
+        catchThrowable(
+            () -> reservationService.create(request(TOMORROW_10, TOMORROW_10), REQUESTER_ID));
+
+    assertApiError(ex, HttpStatus.BAD_REQUEST, "INTERVAL_INVALID");
+    then(grantService).should(never()).getBalanceForUpdate(anyLong());
+  }
+
+  @Test
+  void create_startInPast_throwsBadRequest() {
+    OffsetDateTime start = NOW.minus(Duration.ofMinutes(1)).atOffset(ZoneOffset.UTC);
+
+    Throwable ex =
+        catchThrowable(
+            () -> reservationService.create(request(start, start.plusHours(1)), REQUESTER_ID));
+
+    assertApiError(ex, HttpStatus.BAD_REQUEST, "INTERVAL_INVALID");
+  }
+
+  @Test
+  void create_longerThanMaximumHours_throwsBadRequest() {
+    Throwable ex =
+        catchThrowable(() ->
+            reservationService.create(
+                request(TOMORROW_10, TOMORROW_10.plusHours(1000)), REQUESTER_ID));
+
+    assertApiError(ex, HttpStatus.BAD_REQUEST, "INTERVAL_INVALID");
   }
 
   // ───────────── findMine ─────────────
@@ -306,6 +552,54 @@ class ReservationServiceTest {
             "Imprimarea carcasei pentru senzor");
     reservation.setStatus(ReservationStatus.PENDING_LABORATORY);
     return withId(reservation, 100L);
+  }
+
+  private static CreateReservationRequest request(OffsetDateTime start, OffsetDateTime end) {
+    return new CreateReservationRequest(5L, GRANT_ID, start, end, "  Imprimarea carcasei ");
+  }
+
+  private static User requester() {
+    return withId(
+        new User("Andrei Popescu", "andrei.popescu@student.usv.ro", "hash"), REQUESTER_ID);
+  }
+
+  /** Resursa 5, blocată pentru cerere, cu starea și timpul de pregătire date. */
+  private Resource givenResource(ResourceStatus status, int preparationMinutes) {
+    Resource resource = reservation.getResource();
+    resource.setStatus(status);
+    resource.setPreparationTimeMinutes(preparationMinutes);
+    given(resourceService.getForUpdate(5L)).willReturn(resource);
+    return resource;
+  }
+
+  private void givenGrantWithRemainingHours(String remaining) {
+    BigDecimal remainingHours = new BigDecimal(remaining);
+    given(grantService.getBalanceForUpdate(GRANT_ID))
+        .willReturn(
+            new GrantResponse(
+                GRANT_ID,
+                "PN-III-P4-2026",
+                4L,
+                new BigDecimal("120.00"),
+                new BigDecimal("120.00").subtract(remainingHours),
+                remainingHours,
+                LocalDate.parse("2026-01-01"),
+                LocalDate.parse("2027-12-31")));
+  }
+
+  /** O rezervare activă a altui utilizator pe resursa 5; sfârșitul blocat îl calculează DB-ul. */
+  private Reservation blocking(Instant start, Instant end, Duration preparation) {
+    Reservation other =
+        new Reservation(
+            requester(),
+            reservation.getResource(),
+            GRANT_ID,
+            start,
+            end,
+            new BigDecimal("2.00"),
+            "Alt proiect");
+    ReflectionTestUtils.setField(other, "blockedEnd", end.plus(preparation));
+    return other;
   }
 
   /** Rezervarea 100 există, iar utilizatorul dat o cere cu rolurile date. */
