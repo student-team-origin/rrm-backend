@@ -30,4 +30,14 @@ public class GrantAccess {
                 || grantRepository.isMemberOrMissing(grantId, user.userId()))
         .orElse(false);
   }
+
+  /**
+   * {@code true} dacă utilizatorul curent poate rezerva pe orele grantului: aceiași utilizatori
+   * care îl pot vedea (Administratorul, Coordonatorul și membrii). Pentru un grant inexistent
+   * întoarce {@code true}, ca Service-ul să răspundă cu 404, nu 403.
+   */
+  @Transactional(readOnly = true)
+  public boolean canReserve(Long grantId) {
+    return canView(grantId);
+  }
 }

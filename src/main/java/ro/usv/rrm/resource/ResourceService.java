@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ro.usv.rrm.common.error.ApiException;
 import ro.usv.rrm.common.web.PageResponse;
@@ -121,11 +122,24 @@ public class ResourceService {
     return new ChangeResourceStatusResponse(ResourceResponse.from(resource), cancelledReservations);
   }
 
+  /**
+   * Citește resursa și îi blochează rândul până la finalul tranzacției apelantului, ca cererile de
+   * rezervare pe aceeași resursă să nu se suprapună. Cere o tranzacție deja pornită ({@code
+   * MANDATORY}): fără ea, blocarea s-ar elibera imediat.
+   *
+   * @throws ApiException 404 {@code RESURSA_INEXISTENTA}
+   */
+  @Transactional(propagation = Propagation.MANDATORY)
+  public Resource getForUpdate(Long id) {
+    return resourceRepository.findByIdForUpdate(id).orElseThrow(() -> notFound(id));
+  }
+
   private Resource getResource(Long id) {
-    return resourceRepository
-        .findById(id)
-        .orElseThrow(() ->
-            ApiException.notFound("RESURSA_INEXISTENTA", "Resursa cu id-ul " + id + " nu există."));
+    return resourceRepository.findById(id).orElseThrow(() -> notFound(id));
+  }
+
+  private static ApiException notFound(Long id) {
+    return ApiException.notFound("RESURSA_INEXISTENTA", "Resursa cu id-ul " + id + " nu există.");
   }
 
   private static void applyDetails(Resource resource, CreateResourceRequest request) {

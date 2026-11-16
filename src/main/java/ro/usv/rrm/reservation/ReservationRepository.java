@@ -1,6 +1,7 @@
 package ro.usv.rrm.reservation;
 
 import jakarta.persistence.LockModeType;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -32,6 +33,23 @@ public interface ReservationRepository
   @Override
   @EntityGraph(attributePaths = {"resource.category", "resource.laboratory", "requester"})
   List<Reservation> findAll(Specification<Reservation> spec, Sort sort);
+
+  /**
+   * Rezervările resursei în stările date al căror interval blocat ({@code start} – {@code
+   * sfarsit_blocat}) se suprapune cu {@code [from, to)}, ordonate după start.
+   */
+  @Query(
+      """
+      SELECT r FROM Reservation r
+      WHERE r.resource.id = :resourceId AND r.status IN :statuses
+        AND r.start < :to AND r.blockedEnd > :from
+      ORDER BY r.start
+      """)
+  List<Reservation> findBlocking(
+      @Param("resourceId") Long resourceId,
+      @Param("statuses") Collection<ReservationStatus> statuses,
+      @Param("from") Instant from,
+      @Param("to") Instant to);
 
   /** Ca {@link #findAll(Specification, Sort)}, pentru rezervările cu id-urile date. */
   @EntityGraph(attributePaths = {"resource.category", "resource.laboratory", "requester"})

@@ -9,18 +9,22 @@ import static org.mockito.Mockito.never;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -31,8 +35,11 @@ import ro.usv.rrm.auth.AuthenticatedUser;
 import ro.usv.rrm.auth.SessionService;
 import ro.usv.rrm.common.config.RrmProperties;
 import ro.usv.rrm.common.config.SecurityConfig;
+import ro.usv.rrm.common.error.ApiError;
 import ro.usv.rrm.common.error.ApiException;
 import ro.usv.rrm.common.web.PageResponse;
+import ro.usv.rrm.grant.GrantAccess;
+import ro.usv.rrm.reservation.dto.CreateReservationRequest;
 import ro.usv.rrm.reservation.dto.ReservationDetailResponse;
 import ro.usv.rrm.reservation.dto.ReservationResponse;
 import ro.usv.rrm.resource.ResourceStatus;
@@ -73,6 +80,122 @@ class ReservationControllerTest {
 
   /** Cerut de filtrul JWT din SecurityConfig; testele pun direct utilizatorul autentificat. */
   @MockitoBean private SessionService sessionService;
+
+  @MockitoBean(name = "grantAccess")
+  private GrantAccess grantAccess;
+
+  // ───────────── POST /reservations ─────────────
+
+  private static final String CREATE_BODY =
+      """
+      {"resursaId": 5, "grantId": 1, "start": "2026-11-16T14:00:00+02:00",
+       "sfarsit": "2026-11-16T16:00:00+02:00", "scop": "Imprimarea carcasei"}
+      """;
+
+  @Test
+  void createReservation_validRequest_returns201WithLocation() throws Exception {
+    given(grantAccess.canReserve(1L)).willReturn(true);
+    CreateReservationRequest expected =
+        new CreateReservationRequest(
+            5L,
+            1L,
+            OffsetDateTime.parse("2026-11-16T14:00:00+02:00"),
+            OffsetDateTime.parse("2026-11-16T16:00:00+02:00"),
+            "Imprimarea carcasei");
+    given(reservationService.create(expected, 6L))
+        .willReturn(withStatus(ReservationStatus.PENDING_COORDINATOR));
+
+    mockMvc
+        .perform(
+            post("/api/v1/reservations")
+                .with(authentication(authenticated(USER)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CREATE_BODY))
+        .andExpect(status().isCreated())
+        .andExpect(header().string(HttpHeaders.LOCATION, Matchers.endsWith("/reservations/3")))
+        .andExpect(jsonPath("$.id").value(3))
+        .andExpect(jsonPath("$.stare").value("InAsteptareCoordonator"));
+  }
+
+  @Test
+  void createReservation_notPartOfGrant_returns403() throws Exception {
+    given(grantAccess.canReserve(1L)).willReturn(false);
+
+    mockMvc
+        .perform(
+            post("/api/v1/reservations")
+                .with(authentication(authenticated(USER)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CREATE_BODY))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("ACCES_INTERZIS"));
+
+    then(reservationService).should(never()).create(any(), anyLong());
+  }
+
+  @Test
+  void createReservation_missingFields_returns400WithFields() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/reservations")
+                .with(authentication(authenticated(USER)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"resursaId": 5, "scop": " "}
+                    """))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("DATE_INVALIDE"))
+        .andExpect(jsonPath("$.fields.grantId").exists())
+        .andExpect(jsonPath("$.fields.start").exists())
+        .andExpect(jsonPath("$.fields.sfarsit").exists())
+        .andExpect(jsonPath("$.fields.scop").exists());
+
+    then(reservationService).should(never()).create(any(), anyLong());
+  }
+
+  @Test
+  void createReservation_occupiedInterval_returns409WithFreeIntervals() throws Exception {
+    given(grantAccess.canReserve(1L)).willReturn(true);
+    given(reservationService.create(any(), anyLong()))
+        .willThrow(
+            ApiException.intervalConflict(
+                "INTERVAL_OCUPAT",
+                "Intervalul selectat se suprapune cu o altă rezervare.",
+                List.of(
+                    new ApiError.FreeInterval(
+                        Instant.parse("2026-11-16T08:00:00Z"),
+                        Instant.parse("2026-11-16T11:30:00Z")))));
+
+    mockMvc
+        .perform(
+            post("/api/v1/reservations")
+                .with(authentication(authenticated(USER)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CREATE_BODY))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("INTERVAL_OCUPAT"))
+        .andExpect(jsonPath("$.intervaleLibere[0].start").value("2026-11-16T08:00:00Z"))
+        .andExpect(jsonPath("$.intervaleLibere[0].sfarsit").value("2026-11-16T11:30:00Z"))
+        .andExpect(jsonPath("$.fields").doesNotExist());
+  }
+
+  @Test
+  void createReservation_insufficientBalance_returns422WithoutFreeIntervals() throws Exception {
+    given(grantAccess.canReserve(1L)).willReturn(true);
+    given(reservationService.create(any(), anyLong()))
+        .willThrow(ApiException.businessRule("SOLD_INSUFICIENT", "Sold insuficient."));
+
+    mockMvc
+        .perform(
+            post("/api/v1/reservations")
+                .with(authentication(authenticated(USER)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CREATE_BODY))
+        .andExpect(status().isUnprocessableContent())
+        .andExpect(jsonPath("$.code").value("SOLD_INSUFICIENT"))
+        .andExpect(jsonPath("$.intervaleLibere").doesNotExist());
+  }
 
   // ───────────── GET /reservations ─────────────
 

@@ -16,14 +16,15 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
 import ro.usv.rrm.resource.Resource;
 import ro.usv.rrm.user.User;
 
 /**
  * O cerere de rezervare a unei resurse, pe orele unui grant (tabela {@code rezervare}).
  *
- * <p>Coloana {@code sfarsit_blocat} (sfârșitul + timpul de pregătire al resursei) nu este mapată: o
- * calculează triggerul {@code trg_rezervare_sfarsit_blocat}, iar constrângerea {@code
+ * <p>Coloana {@code sfarsit_blocat} (sfârșitul + timpul de pregătire al resursei) doar se citește:
+ * o calculează triggerul {@code trg_rezervare_sfarsit_blocat}, iar constrângerea {@code
  * rezervare_fara_suprapunere} o folosește doar pentru rezervările active. Astfel, o rezervare
  * anulată eliberează automat intervalul.
  */
@@ -63,6 +64,15 @@ public class Reservation {
 
   @Column(name = "sfarsit", nullable = false)
   private Instant end;
+
+  /**
+   * Sfârșitul intervalului blocat (sfârșitul + timpul de pregătire al resursei). Îl calculează
+   * triggerul la inserare și la schimbarea resursei sau a sfârșitului; nu se scrie din cod.
+   */
+  @Generated(event = {EventType.INSERT, EventType.UPDATE})
+  @Column(name = "sfarsit_blocat", nullable = false, insertable = false, updatable = false)
+  @Setter(AccessLevel.NONE)
+  private Instant blockedEnd;
 
   @Column(name = "ore_solicitate", nullable = false, precision = 5, scale = 2)
   private BigDecimal requestedHours;
