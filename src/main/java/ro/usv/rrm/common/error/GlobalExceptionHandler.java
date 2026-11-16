@@ -12,6 +12,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -28,6 +29,8 @@ public class GlobalExceptionHandler {
   static final String DATE_TIME_FORMAT_MESSAGE =
       "Data și ora trebuie să fie în format ISO 8601, cu fus orar"
           + " (ex. 2026-11-16T00:00:00+02:00).";
+
+  static final String MISSING_PARAMETER_MESSAGE = "Parametrul este obligatoriu.";
 
   @ExceptionHandler(ApiException.class)
   ResponseEntity<ApiError> handleApiException(ApiException ex) {
@@ -77,6 +80,20 @@ public class GlobalExceptionHandler {
                 "CERERE_INVALIDA",
                 "Cererea nu are un format valid.",
                 Map.of(ex.getName(), DATE_TIME_FORMAT_MESSAGE)));
+  }
+
+  /**
+   * Lipsește un parametru obligatoriu din URL (ex. {@code from} la disponibilitatea unei resurse).
+   * Fără acest handler, cererea ar ajunge la {@link #handleUnexpected} și ar întoarce 500.
+   */
+  @ExceptionHandler(MissingServletRequestParameterException.class)
+  ResponseEntity<ApiError> handleMissingParameter(MissingServletRequestParameterException ex) {
+    return ResponseEntity.badRequest()
+        .body(
+            new ApiError(
+                "CERERE_INVALIDA",
+                "Cererea nu are un format valid.",
+                Map.of(ex.getParameterName(), MISSING_PARAMETER_MESSAGE)));
   }
 
   /**

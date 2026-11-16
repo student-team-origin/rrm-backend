@@ -32,6 +32,7 @@ import ro.usv.rrm.common.web.PageResponse;
 import ro.usv.rrm.grant.GrantService;
 import ro.usv.rrm.grant.dto.GrantResponse;
 import ro.usv.rrm.reservation.dto.CreateReservationRequest;
+import ro.usv.rrm.reservation.dto.OccupiedIntervalResponse;
 import ro.usv.rrm.reservation.dto.ReservationDetailResponse;
 import ro.usv.rrm.reservation.dto.ReservationResponse;
 import ro.usv.rrm.resource.Resource;
@@ -51,6 +52,9 @@ public class ReservationService {
   private static final BigDecimal MAX_REQUESTED_HOURS = new BigDecimal("999.99");
 
   private static final String OVERLAP_CONSTRAINT = "rezervare_fara_suprapunere";
+
+  /** Cel mai lung interval al calendarului: 3 luni (vizualizarea pe lună are 6 săptămâni). */
+  static final int MAX_AVAILABILITY_DAYS = 93;
 
   private static final String EXCLUSION_VIOLATION = "23P01";
   private static final BigDecimal MILLIS_PER_HOUR =
@@ -118,6 +122,36 @@ public class ReservationService {
         reservationRepository.findAll(
             ReservationSpecifications.awaitingDecision(grantIds, laboratoryIds, clock.instant()),
             Sort.by("start").and(Sort.by("id"))));
+  }
+
+  /**
+   * Intervalele în care resursa este ocupată între {@code from} și {@code to}, pentru calendar:
+   * rezervările în stările care blochează resursa (aceleași ca în constrângerea {@code
+   * rezervare_fara_suprapunere}), cu sfârșitul care include timpul de pregătire, ordonate după
+   * start.
+   *
+   * @throws ApiException 400 {@code INTERVAL_INVALID} ({@code to} nu e după {@code from} sau
+   *     intervalul depășește {@value #MAX_AVAILABILITY_DAYS} de zile); 404 {@code
+   *     RESURSA_INEXISTENTA}
+   */
+  @Transactional(readOnly = true)
+  public List<OccupiedIntervalResponse> findOccupiedIntervals(
+      long resourceId, Instant from, Instant to) {
+    if (!to.isAfter(from)) {
+      throw ApiException.badRequest(
+          "INTERVAL_INVALID", "Sfârșitul intervalului trebuie să fie după început.");
+    }
+    if (Duration.between(from, to).compareTo(Duration.ofDays(MAX_AVAILABILITY_DAYS)) > 0) {
+      throw ApiException.badRequest(
+          "INTERVAL_INVALID",
+          "Intervalul poate avea cel mult " + MAX_AVAILABILITY_DAYS + " de zile.");
+    }
+    resourceService.findById(resourceId);
+    return reservationRepository
+        .findBlocking(resourceId, ReservationStatus.BLOCKING, from, to)
+        .stream()
+        .map(OccupiedIntervalResponse::from)
+        .toList();
   }
 
   /** Detaliile rezervărilor cu id-urile date, în ordinea id-urilor primite. */

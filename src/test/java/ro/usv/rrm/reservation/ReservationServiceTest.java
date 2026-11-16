@@ -48,6 +48,7 @@ import ro.usv.rrm.grant.GrantService;
 import ro.usv.rrm.grant.dto.GrantResponse;
 import ro.usv.rrm.laboratory.Laboratory;
 import ro.usv.rrm.reservation.dto.CreateReservationRequest;
+import ro.usv.rrm.reservation.dto.OccupiedIntervalResponse;
 import ro.usv.rrm.reservation.dto.ReservationDetailResponse;
 import ro.usv.rrm.reservation.dto.ReservationResponse;
 import ro.usv.rrm.resource.Resource;
@@ -529,6 +530,74 @@ class ReservationServiceTest {
     Throwable ex = catchThrowable(() -> reservationService.cancel(999L, REQUESTER_ID, null));
 
     assertApiError(ex, HttpStatus.NOT_FOUND, "REZERVARE_INEXISTENTA");
+  }
+
+  // ───────────── findOccupiedIntervals ─────────────
+
+  private static final Instant WEEK_START = Instant.parse("2026-11-15T22:00:00Z");
+
+  @Test
+  void findOccupiedIntervals_returnsBlockingReservationsWithPreparationTime() {
+    Reservation other =
+        blocking(
+            Instant.parse("2026-11-16T09:00:00Z"),
+            Instant.parse("2026-11-16T11:00:00Z"),
+            Duration.ofMinutes(15));
+    other.setStatus(ReservationStatus.APPROVED);
+    Instant weekEnd = WEEK_START.plus(Duration.ofDays(7));
+    given(reservationRepository.findBlocking(5L, ReservationStatus.BLOCKING, WEEK_START, weekEnd))
+        .willReturn(List.of(other));
+
+    List<OccupiedIntervalResponse> intervals =
+        reservationService.findOccupiedIntervals(5L, WEEK_START, weekEnd);
+
+    assertThat(intervals)
+        .containsExactly(
+            new OccupiedIntervalResponse(
+                Instant.parse("2026-11-16T09:00:00Z"),
+                Instant.parse("2026-11-16T11:15:00Z"),
+                ReservationStatus.APPROVED));
+    then(resourceService).should().findById(5L);
+  }
+
+  @Test
+  void findOccupiedIntervals_unknownResource_throwsNotFound() {
+    given(resourceService.findById(999L))
+        .willThrow(ApiException.notFound("RESURSA_INEXISTENTA", "Resursa nu există."));
+
+    Throwable ex =
+        catchThrowable(() ->
+            reservationService.findOccupiedIntervals(
+                999L, WEEK_START, WEEK_START.plus(Duration.ofDays(7))));
+
+    assertApiError(ex, HttpStatus.NOT_FOUND, "RESURSA_INEXISTENTA");
+    then(reservationRepository).should(never()).findBlocking(any(), any(), any(), any());
+  }
+
+  @Test
+  void findOccupiedIntervals_toNotAfterFrom_throwsBadRequest() {
+    Throwable ex =
+        catchThrowable(() -> reservationService.findOccupiedIntervals(5L, WEEK_START, WEEK_START));
+
+    assertApiError(ex, HttpStatus.BAD_REQUEST, "INTERVAL_INVALID");
+    then(resourceService).should(never()).findById(any());
+  }
+
+  @Test
+  void findOccupiedIntervals_longerThanMaximum_throwsBadRequest() {
+    Instant to = WEEK_START.plus(Duration.ofDays(ReservationService.MAX_AVAILABILITY_DAYS + 1L));
+
+    Throwable ex =
+        catchThrowable(() -> reservationService.findOccupiedIntervals(5L, WEEK_START, to));
+
+    assertApiError(ex, HttpStatus.BAD_REQUEST, "INTERVAL_INVALID");
+  }
+
+  @Test
+  void findOccupiedIntervals_exactlyMaximum_isAllowed() {
+    Instant to = WEEK_START.plus(Duration.ofDays(ReservationService.MAX_AVAILABILITY_DAYS));
+
+    assertThat(reservationService.findOccupiedIntervals(5L, WEEK_START, to)).isEmpty();
   }
 
   // ───────────── date de test ─────────────
